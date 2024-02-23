@@ -4,7 +4,19 @@ use serde::{Deserialize, Serialize};
 use strum::EnumString;
 use thiserror::Error;
 
-#[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, Eq, PartialEq, EnumString, Hash)]
+#[derive(
+    Debug,
+    Default,
+    Deserialize,
+    Serialize,
+    Clone,
+    Copy,
+    Eq,
+    PartialEq,
+    EnumString,
+    Hash,
+    strum::Display,
+)]
 pub enum Currency {
     USD,
     #[default]
@@ -15,7 +27,7 @@ pub enum Currency {
     GBP,
 }
 
-#[derive(Debug, Default, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Default, Deserialize, Clone, Copy, PartialEq)]
 pub struct Money {
     pub currency: Currency,
     pub amount: f64,
@@ -25,11 +37,35 @@ impl Money {
     pub fn new(currency: Currency, amount: f64) -> Self {
         Self { currency, amount }
     }
+    pub fn add(&self, amount: f64) -> Self {
+        Self {
+            amount: self.amount + amount,
+            ..*self
+        }
+    }
+    pub fn sub(&self, amount: f64) -> Self {
+        Self {
+            amount: self.amount - amount,
+            ..*self
+        }
+    }
+    pub fn mul(&self, amount: f64) -> Self {
+        Self {
+            amount: self.amount * amount,
+            ..*self
+        }
+    }
+    pub fn div(&self, amount: f64) -> Self {
+        Self {
+            amount: self.amount / amount,
+            ..*self
+        }
+    }
 }
 
 impl Display for Money {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{:#?}, {:#?}]", self.currency, self.amount)
+        write!(f, "{:.2} {}", self.amount, self.currency)
     }
 }
 
