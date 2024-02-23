@@ -1,11 +1,11 @@
-use std::collections::HashSet;
 use std::fmt::Display;
+use std::str::FromStr;
+use std::{collections::HashSet, fmt};
 
 use serde::{Deserialize, Serialize};
-use serde_repr::Serialize_repr;
 use strum::{self, Display, EnumString};
 
-#[derive(Clone, Debug, Default, Deserialize, EnumString, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, EnumString, PartialEq, Eq, Hash, Display)]
 pub enum Period {
     PT1S,
     PT1M,
@@ -20,12 +20,6 @@ pub enum Period {
     P3Y,
     P5Y,
     P50Y,
-}
-
-impl Display for Period {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 impl Period {
@@ -61,7 +55,7 @@ impl Period {
             Self::P50Y => chrono::Duration::weeks(52 * 50), // Approximation
         }
     }
-    pub fn div(&self, other: &Period) -> usize {
+    pub fn div(&self, other: Period) -> usize {
         match self {
             Self::P1Y => match other {
                 Self::P1M => 12,
@@ -108,18 +102,16 @@ impl std::ops::Add<Period> for chrono::DateTime<chrono::Utc> {
 }
 
 #[derive(
-    Debug, Default, Deserialize, PartialEq, Eq, Hash, EnumString, Clone, Copy, Serialize_repr,
+    Debug, Default, Deserialize, PartialEq, Eq, Hash, EnumString, Clone, Copy, Serialize, Display,
 )]
-#[strum(ascii_case_insensitive)]
-#[repr(u8)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum OrderType {
     #[default]
-    Limit = 0,
-    StopLimit = 1,
-    Market = 2,
-    StopLoss = 3,
-    TrailingStop = 4,
+    Limit,
+    StopLimit,
+    Market,
+    StopLoss,
+    TrailingStop,
     StandardAmount,
     StandardSize,
 }
@@ -128,13 +120,24 @@ pub enum OrderType {
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]
 pub struct AllowedOrderTypes(HashSet<OrderType>);
 
+impl fmt::Display for AllowedOrderTypes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for x in &self.0 {
+            write!(f, "{}, ", x)?;
+        }
+        Ok(())
+    }
+}
+
 impl AllowedOrderTypes {
     pub fn has(&self, x: OrderType) -> bool {
         self.0.contains(&x)
     }
 }
 
-#[derive(Clone, Debug, Deserialize, EnumString, Display, PartialEq, PartialOrd, Serialize)]
+#[derive(
+    Clone, Copy, Debug, Deserialize, EnumString, Display, PartialEq, PartialOrd, Serialize,
+)]
 #[strum(ascii_case_insensitive)]
 pub enum ProductCategory {
     A,
@@ -153,21 +156,29 @@ pub enum ProductCategory {
 }
 
 #[derive(
-    Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Hash, EnumString, Serialize_repr,
+    Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Hash, EnumString, Serialize, Display,
 )]
 #[strum(ascii_case_insensitive)]
-#[repr(u8)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum OrderTimeType {
     #[default]
     #[serde(rename(deserialize = "DAY"))]
-    Day = 1,
+    Day,
     #[serde(rename(deserialize = "GTC"))]
-    Gtc = 3,
+    Gtc,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OrderTimeTypes(HashSet<OrderTimeType>);
+
+impl fmt::Display for OrderTimeTypes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for x in &self.0 {
+            write!(f, "{}, ", x)?;
+        }
+        Ok(())
+    }
+}
 
 impl OrderTimeTypes {
     pub fn has(&self, x: OrderTimeType) -> bool {
@@ -181,11 +192,96 @@ pub enum ProductType {
     Stock,
 }
 
-#[derive(Debug, Default, Deserialize, Clone, Copy, Serialize, PartialEq, EnumString)]
+#[derive(
+    Debug, Default, Deserialize, Clone, Copy, Serialize, PartialEq, EnumString, strum::Display,
+)]
 pub enum TransactionType {
     #[default]
     #[serde(rename(deserialize = "B", serialize = "BUY"))]
     Buy,
     #[serde(rename(deserialize = "S", serialize = "SELL"))]
     Sell,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum Exchange {
+    NSDQ,
+    NSY,
+    EAM,
+    XET,
+    TDG,
+    EPA,
+    WSE,
+    TSE,
+    OSL,
+    SWX,
+    OMX,
+    ATH,
+    ASE,
+    TSV,
+    ASX,
+    LSE,
+    TOR,
+    HKS,
+    Unknown(i32),
+}
+
+impl FromStr for Exchange {
+    type Err = strum::ParseError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let x = s.parse::<i32>().unwrap();
+        Ok(x.into())
+    }
+}
+
+impl From<i32> for Exchange {
+    fn from(x: i32) -> Self {
+        match x {
+            663 => Self::NSDQ,
+            676 => Self::NSY,
+            200 => Self::EAM,
+            194 => Self::XET,
+            196 => Self::TDG,
+            710 => Self::EPA,
+            801 => Self::WSE,
+            5001 => Self::TSE,
+            520 => Self::OSL,
+            947 => Self::SWX,
+            860 => Self::OMX,
+            219 => Self::ATH,
+            650 => Self::ASE,
+            893 => Self::TSV,
+            5002 => Self::ASX,
+            570 => Self::LSE,
+            892 => Self::TOR,
+            454 => Self::HKS,
+            _ => Self::Unknown(x),
+        }
+    }
+}
+
+impl fmt::Display for Exchange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NSDQ => write!(f, "NSDQ"),
+            Self::NSY => write!(f, "NSY"),
+            Self::EAM => write!(f, "EAM"),
+            Self::XET => write!(f, "XET"),
+            Self::TDG => write!(f, "TDG"),
+            Self::EPA => write!(f, "EPA"),
+            Self::WSE => write!(f, "WSE"),
+            Self::TSE => write!(f, "TSE"),
+            Self::OSL => write!(f, "OSL"),
+            Self::SWX => write!(f, "SWX"),
+            Self::OMX => write!(f, "OMX"),
+            Self::ATH => write!(f, "ATH"),
+            Self::ASE => write!(f, "ASE"),
+            Self::TSV => write!(f, "TSV"),
+            Self::ASX => write!(f, "ASX"),
+            Self::LSE => write!(f, "LSE"),
+            Self::TOR => write!(f, "TOR"),
+            Self::HKS => write!(f, "HKS"),
+            Self::Unknown(x) => write!(f, "Unknown({})", x),
+        }
+    }
 }
