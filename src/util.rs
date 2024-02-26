@@ -102,7 +102,7 @@ impl std::ops::Add<Period> for chrono::DateTime<chrono::Utc> {
 }
 
 #[derive(
-    Debug, Default, Deserialize, PartialEq, Eq, Hash, EnumString, Clone, Copy, Serialize, Display,
+    Debug, Default, Serialize, Deserialize, PartialEq, Eq, Hash, EnumString, Clone, Copy, Display,
 )]
 #[serde(rename_all = "UPPERCASE")]
 pub enum OrderType {
@@ -116,8 +116,20 @@ pub enum OrderType {
     StandardSize,
 }
 
+impl From<OrderType> for u8 {
+    fn from(value: OrderType) -> Self {
+        match value {
+            OrderType::Limit => 0,
+            OrderType::StopLimit => 1,
+            OrderType::Market => 2,
+            OrderType::StopLoss => 3,
+            _ => unimplemented!(),
+        }
+    }
+}
+
 #[allow(dead_code)]
-#[derive(Debug, Default, Deserialize, Clone, Serialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct AllowedOrderTypes(HashSet<OrderType>);
 
 impl fmt::Display for AllowedOrderTypes {
@@ -166,6 +178,15 @@ pub enum OrderTimeType {
     Day,
     #[serde(rename(deserialize = "GTC"))]
     Gtc,
+}
+
+impl From<OrderTimeType> for u8 {
+    fn from(value: OrderTimeType) -> Self {
+        match value {
+            OrderTimeType::Day => 1,
+            OrderTimeType::Gtc => 3,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
