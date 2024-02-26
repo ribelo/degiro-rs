@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    client::{Client, ClientError},
+    client::{Client, ClientError, ClientStatus},
     util::Period,
 };
 
@@ -132,7 +132,7 @@ impl CandlesData {
         id: impl Into<String>,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-        interval: &Period,
+        interval: Period,
     ) -> Quotes {
         let mut quotes = Quotes {
             id: id.into().to_uppercase(),
@@ -181,28 +181,17 @@ impl From<Quotes> for Candles {
     }
 }
 
-#[cfg(feature = "erfurt")]
-impl From<&Quotes> for Candles {
-    fn from(quotes: &Quotes) -> Self {
-        Candles {
-            id: quotes.id.clone(),
-            open: quotes.open.clone(),
-            high: quotes.high.clone(),
-            low: quotes.low.clone(),
-            close: quotes.close.clone(),
-            volume: quotes.volume.clone(),
-            time: quotes.time.clone(),
-        }
-    }
-}
-
 impl Client {
     pub async fn quotes(
         &self,
         id: &str,
-        period: &Period,
-        interval: &Period,
+        period: Period,
+        interval: Period,
     ) -> Result<Quotes, ClientError> {
+        if self.inner.lock().unwrap().status != ClientStatus::Authorized {
+            return Err(ClientError::Unauthorized);
+        }
+
         let product = self.product(id).await?;
 
         let req = {
@@ -235,6 +224,17 @@ impl Client {
         match res.error_for_status() {
             Ok(res) => {
                 let body = res.json::<Value>().await?;
+                let error = body
+                    .get("series")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.first())
+                    .and_then(|obj| obj.get("error"))
+                    .and_then(|error| error.as_str());
+
+                if let Some(error) = error {
+                    return Err(ClientError::Descripted(error.to_string()));
+                }
+
                 let start = serde_json::from_value::<NaiveDateTime>(body["start"].clone())?;
                 let start: DateTime<Utc> = DateTime::from_naive_utc_and_offset(start, Utc);
                 let end = serde_json::from_value::<NaiveDateTime>(body["end"].clone())?;
@@ -246,7 +246,10 @@ impl Client {
                 Ok(quotes)
             }
             Err(err) => match err.status() {
-                Some(status) if status.as_u16() == 401 => Err(ClientError::Unauthorized),
+                Some(status) if status.as_u16() == 401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
@@ -255,8 +258,8 @@ impl Client {
     }
 }
 
-impl<'a> Product<'a> {
-    pub async fn quotes(&self, period: &Period, interval: &Period) -> Result<Quotes, ClientError> {
+impl Product {
+    pub async fn quotes(&self, period: Period, interval: Period) -> Result<Quotes, ClientError> {
         self.client.quotes(&self.inner.id, period, interval).await
     }
 }
@@ -271,7 +274,7 @@ mod test {
         client.login().await.unwrap();
         client.account_config().await.unwrap();
         let product = client.product("17461000").await.unwrap();
-        let quotes = product.quotes(&Period::P1Y, &Period::P1D).await.unwrap();
+        let quotes = product.quotes(Period::P1Y, Period::P1D).await.unwrap();
         dbg!(quotes);
     }
 }
