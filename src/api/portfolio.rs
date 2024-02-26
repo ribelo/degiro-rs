@@ -6,7 +6,7 @@ use strum::EnumString;
 use thiserror::Error;
 
 use crate::{
-    client::{Client, ClientError},
+    client::{Client, ClientError, ClientStatus},
     money::{Currency, Money},
 };
 
@@ -46,7 +46,7 @@ enum ElemType {
 
 #[allow(dead_code)]
 #[derive(Clone, Debug, Default)]
-pub struct PositionInner {
+pub struct PositionDetails {
     pub id: String,
     pub position_type: PositionType,
     pub size: f64,
@@ -69,13 +69,13 @@ pub struct PositionInner {
 }
 
 #[derive(Clone, Debug)]
-pub struct Position<'a> {
-    pub inner: PositionInner,
-    pub client: &'a Client,
+pub struct Position {
+    pub inner: PositionDetails,
+    pub client: Client,
 }
 
-impl<'a> Position<'a> {
-    pub fn new(inner: PositionInner, client: &'a Client) -> Self {
+impl Position {
+    pub fn new(inner: PositionDetails, client: Client) -> Self {
         Self { inner, client }
     }
     pub async fn product(&self) -> Result<Product, ClientError> {
@@ -84,15 +84,45 @@ impl<'a> Position<'a> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct Portfolio<'a>(pub Vec<Position<'a>>);
+pub struct Portfolio(pub Vec<Position>);
 
-impl<'a> Portfolio<'a> {
-    pub fn new(xs: impl Into<Vec<Position<'a>>>) -> Self {
+impl Portfolio {
+    pub fn new(xs: impl Into<Vec<Position>>) -> Self {
         Self(xs.into())
+    }
+    pub fn iter(&self) -> std::slice::Iter<Position> {
+        self.0.iter()
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn first(&self) -> Option<&Position> {
+        self.0.first()
+    }
+    pub fn last(&self) -> Option<&Position> {
+        self.0.last()
+    }
+    pub fn get(&self, index: usize) -> Option<&Position> {
+        self.0.get(index)
+    }
+    pub fn into_inner(self) -> Vec<Position> {
+        self.0
+    }
+    pub fn into_details(self) -> Vec<PositionDetails> {
+        self.0.into_iter().map(|x| x.inner).collect()
+    }
+    pub fn as_slice(&self) -> &[Position] {
+        self.0.as_slice()
+    }
+    pub fn as_mut_slice(&mut self) -> &mut [Position] {
+        self.0.as_mut_slice()
     }
 }
 
-impl<'a> Portfolio<'a> {
+impl Portfolio {
     pub fn value(&self) -> HashMap<Currency, f64> {
         let mut m = HashMap::default();
         for p in &self.0 {
@@ -166,11 +196,11 @@ pub enum PositionType {
 #[error("can't parse object {:#?}", 0)]
 pub struct ParsePositionError(PortfolioObject);
 
-impl TryFrom<PortfolioObject> for PositionInner {
+impl TryFrom<PortfolioObject> for PositionDetails {
     type Error = ParsePositionError;
 
     fn try_from(obj: PortfolioObject) -> Result<Self, Self::Error> {
-        let mut position = PositionInner::default();
+        let mut position = PositionDetails::default();
         let mut value = 0.0;
         for row in &obj.value {
             match row.elem_type {
@@ -270,12 +300,16 @@ impl TryFrom<PortfolioObject> for PositionInner {
                 }
             }
         }
-        position.total_profit =
-            -(position.today_value.clone() - position.base_value.clone()).unwrap();
+        let currency = position.total_profit.currency;
+        position.total_profit = Money::new(
+            currency,
+            (position.price * position.size - position.break_even_price * position.size)
+                * position.average_fx_rate,
+        );
         let profit = (position.price * position.size)
             - (position.break_even_price * position.size) / position.average_fx_rate;
-        position.product_profit = Money::new(position.total_profit.currency, profit);
-        position.value = Money::new(position.currency, value);
+        position.product_profit = Money::new(currency, profit);
+        position.value = Money::new(currency, value);
         position.fx_profit = ((position.total_profit.clone() - position.product_profit.clone())
             .unwrap()
             - position.realized_fx_profit.clone())
@@ -286,6 +320,10 @@ impl TryFrom<PortfolioObject> for PositionInner {
 
 impl Client {
     pub async fn portfolio(&self) -> Result<Portfolio, ClientError> {
+        if self.inner.lock().unwrap().status != ClientStatus::Authorized {
+            return Err(ClientError::Unauthorized);
+        }
+
         let req = {
             let inner = self.inner.lock().unwrap();
             let base_url = &inner.account_config.trading_url;
@@ -322,14 +360,17 @@ impl Client {
                 let objs: Vec<PortfolioObject> = serde_json::from_value(body.clone()).unwrap();
                 let mut xs: Vec<_> = Vec::new();
                 for obj in objs {
-                    let p: PositionInner = obj.try_into().unwrap();
-                    let position = Position::new(p, self);
+                    let p: PositionDetails = obj.try_into().unwrap();
+                    let position = Position::new(p, self.clone());
                     xs.push(position)
                 }
                 Ok(Portfolio::new(xs))
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
