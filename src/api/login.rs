@@ -1,4 +1,4 @@
-use crate::client::{Client, ClientError};
+use crate::client::{Client, ClientError, ClientStatus};
 
 use mime;
 use reqwest::{header, Url};
@@ -16,6 +16,11 @@ struct LoginResponse {
 }
 
 impl Client {
+    pub async fn authorize(&self) -> Result<(), ClientError> {
+        self.login().await?;
+        self.account_config().await?;
+        Ok(())
+    }
     pub async fn login(&self) -> Result<(), ClientError> {
         let req = {
             let inner = self.inner.lock().unwrap();
@@ -57,6 +62,7 @@ impl Client {
                 {
                     let mut inner = self.inner.lock().unwrap();
                     inner.session_id = body.session_id.unwrap();
+                    inner.status = ClientStatus::Restricted;
                 };
 
                 Ok(())

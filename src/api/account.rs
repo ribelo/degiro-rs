@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use reqwest::{header, Url};
 use serde::Deserialize;
 
-use crate::client::{Client, ClientError};
+use crate::client::{Client, ClientError, ClientStatus};
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -168,6 +168,7 @@ impl Client {
                     let mut inner = self.inner.lock().unwrap();
                     inner.client_id = data.client_id;
                     inner.account_config = data;
+                    inner.status = ClientStatus::Authorized;
                 };
                 let account_data = self.account_data().await.unwrap();
                 {
@@ -177,7 +178,10 @@ impl Client {
                 Ok(())
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
@@ -222,7 +226,10 @@ impl Client {
                 Ok(account)
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
@@ -269,7 +276,10 @@ impl Client {
                 Ok(info)
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
