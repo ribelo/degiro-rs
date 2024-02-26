@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    client::{Client, ClientError},
+    client::{Client, ClientError, ClientStatus},
     util::{AllowedOrderTypes, OrderTimeTypes, ProductCategory},
 };
 
@@ -13,18 +13,18 @@ use super::product::Product;
 
 #[allow(dead_code)]
 #[derive(Debug)]
-pub struct QueryBuilder<'a> {
+pub struct QueryBuilder {
     query: String,
     symbol: Option<String>,
     limit: u32,
     offset: u32,
-    client: &'a Client,
+    client: Client,
 }
 
 #[derive(Deserialize, Derivative, Clone)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct QueryProductInner {
+pub struct QueryProductDetails {
     pub active: bool,
     pub buy_order_types: AllowedOrderTypes,
     pub category: ProductCategory,
@@ -54,30 +54,33 @@ pub struct QueryProductInner {
 }
 
 #[derive(Clone, Debug)]
-pub struct QueryProduct<'a> {
-    pub inner: QueryProductInner,
-    pub client: &'a Client,
+pub struct QueryProduct {
+    pub inner: QueryProductDetails,
+    pub client: Client,
 }
 
-impl<'a> QueryBuilder<'a> {
-    pub fn query(&mut self, query: &str) -> &mut Self {
+impl QueryBuilder {
+    pub fn query(mut self, query: &str) -> Self {
         self.query = query.to_uppercase();
         self
     }
-    pub fn symbol(&mut self, symbol: &str) -> &mut Self {
+    pub fn symbol(mut self, symbol: &str) -> Self {
         self.symbol = Some(symbol.to_uppercase());
         self
     }
-    pub fn limit(&mut self, limit: u32) -> &mut Self {
+    pub fn limit(mut self, limit: u32) -> Self {
         self.limit = limit;
         self
     }
-    pub fn offset(&mut self, offset: u32) -> &mut Self {
+    pub fn offset(mut self, offset: u32) -> Self {
         self.offset = offset;
         self
     }
 
     pub async fn send(&self) -> Result<Vec<QueryProduct>, ClientError> {
+        if self.client.inner.lock().unwrap().status != ClientStatus::Authorized {
+            return Err(ClientError::Unauthorized);
+        }
         let req = {
             let inner = self.client.inner.try_lock().unwrap();
             let base_url = &inner.account_config.product_search_url;
@@ -105,12 +108,13 @@ impl<'a> QueryBuilder<'a> {
                 let mut body = res.json::<Value>().await.unwrap();
                 if let Some(products) = body.get_mut("products") {
                     let products_inner =
-                        serde_json::from_value::<Vec<QueryProductInner>>(products.take()).unwrap();
+                        serde_json::from_value::<Vec<QueryProductDetails>>(products.take())
+                            .unwrap();
                     let mut products = Vec::new();
                     for p in products_inner {
                         products.push(QueryProduct {
                             inner: p,
-                            client: self.client,
+                            client: self.client.clone(),
                         })
                     }
                     if let Some(symbol) = &self.symbol {
@@ -126,7 +130,10 @@ impl<'a> QueryBuilder<'a> {
                 }
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.client.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
@@ -142,12 +149,12 @@ impl Client {
             symbol: None,
             limit: 1,
             offset: 0,
-            client: self,
+            client: self.clone(),
         }
     }
 }
 
-impl<'a> QueryProduct<'a> {
+impl QueryProduct {
     pub async fn product(&self) -> Result<Product, ClientError> {
         self.client.product(&self.inner.id).await
     }
