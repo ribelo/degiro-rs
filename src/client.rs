@@ -94,9 +94,15 @@ pub enum ClientError {
 
     #[error("unexpected statement: {0}")]
     UnexpectedStatementType(String),
+
+    #[error("No data found")]
+    NoData,
+
+    #[error("DegiroError: {0}")]
+    Descripted(String),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClientStatus {
     Unauthorized,
     Configured,
@@ -107,6 +113,7 @@ pub enum ClientStatus {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct ClientRef {
+    pub status: ClientStatus,
     pub(crate) username: String,
     pub(crate) password: String,
     pub(crate) session_id: String,
@@ -169,6 +176,7 @@ impl ClientRef {
         let username = username.into();
         let password = password.into();
         Self {
+            status: ClientStatus::Unauthorized,
             username,
             password,
             http_client,
