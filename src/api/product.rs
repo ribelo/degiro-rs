@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug},
+    sync::Arc,
+};
 
 use chrono::NaiveDate;
 use derivative::Derivative;
@@ -6,13 +10,13 @@ use reqwest::{header, Url};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    client::{Client, ClientError},
+    client::{Client, ClientError, ClientStatus},
     util::{AllowedOrderTypes, OrderTimeTypes, ProductCategory},
 };
 
 #[derive(Clone, Debug, Deserialize, Derivative, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ProductInner {
+pub struct ProductDetails {
     pub active: bool,
     pub buy_order_types: AllowedOrderTypes,
     pub category: ProductCategory,
@@ -47,20 +51,132 @@ pub struct ProductInner {
     pub vwd_module_id_secondary: Option<i32>,
 }
 
-#[derive(Clone, Debug)]
-pub struct Product<'a> {
-    pub inner: Arc<ProductInner>,
-    pub client: &'a Client,
+impl fmt::Display for ProductDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "Product Details:")?;
+        writeln!(f, "Name: {}", self.name)?;
+        writeln!(f, "Symbol: {}", self.symbol)?;
+        writeln!(f, "ISIN: {}", self.isin)?;
+        writeln!(f, "Active: {}", self.active)?;
+        writeln!(f, "Category: {}", self.category)?;
+        writeln!(f, "Exchange ID: {}", self.exchange_id)?;
+        writeln!(f, "Close Price: {}", self.close_price)?;
+        writeln!(f, "Close Price Date: {}", self.close_price_date)?;
+        writeln!(f, "Contract Size: {}", self.contract_size)?;
+        writeln!(
+            f,
+            "Feed Quality: {}",
+            self.feed_quality.as_ref().unwrap_or(&"N/A".to_string())
+        )?;
+        writeln!(
+            f,
+            "Feed Quality Secondary: {}",
+            self.feed_quality_secondary
+                .as_ref()
+                .unwrap_or(&"N/A".to_string())
+        )?;
+        writeln!(f, "ID: {}", self.id)?;
+        writeln!(f, "Only EOD Prices: {}", self.only_eod_prices)?;
+        writeln!(f, "Order Book Depth: {}", self.order_book_depth)?;
+        writeln!(
+            f,
+            "Order Book Depth Secondary: {}",
+            self.order_book_depth_secondary
+                .map_or("N/A".to_string(), |v| v.to_string())
+        )?;
+        writeln!(f, "Order Time Types: {}", self.order_time_types)?;
+        writeln!(f, "Product Bit Types: {:?}", self.product_bit_types)?;
+        writeln!(f, "Product Type: {}", self.product_type)?;
+        writeln!(f, "Product Type ID: {}", self.product_type_id)?;
+        writeln!(f, "Quality Switch Free: {}", self.quality_switch_free)?;
+        writeln!(
+            f,
+            "Quality Switch Free Secondary: {}",
+            self.quality_switch_free_secondary
+                .map_or("N/A".to_string(), |v| v.to_string())
+        )?;
+        writeln!(f, "Quality Switchable: {}", self.quality_switchable)?;
+        writeln!(
+            f,
+            "Quality Switchable Secondary: {}",
+            self.quality_switchable_secondary
+                .map_or("N/A".to_string(), |v| v.to_string())
+        )?;
+        writeln!(f, "Sell Order Types: {}", self.sell_order_types)?;
+        writeln!(f, "Tradable: {}", self.tradable)?;
+        writeln!(f, "VWD ID: {}", self.vwd_id)?;
+        writeln!(
+            f,
+            "VWD ID Secondary: {}",
+            self.vwd_id_secondary.as_ref().unwrap_or(&"N/A".to_string())
+        )?;
+        writeln!(f, "VWD Identifier Type: {}", self.vwd_identifier_type)?;
+        writeln!(
+            f,
+            "VWD Identifier Type Secondary: {}",
+            self.vwd_identifier_type_secondary
+                .as_ref()
+                .unwrap_or(&"N/A".to_string())
+        )?;
+        writeln!(f, "VWD Module ID: {}", self.vwd_module_id)?;
+        writeln!(
+            f,
+            "VWD Module ID Secondary: {}",
+            self.vwd_module_id_secondary
+                .map_or("N/A".to_string(), |v| v.to_string())
+        )?;
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct Products<'a>(pub HashMap<String, Product<'a>>);
+pub struct Product {
+    pub inner: ProductDetails,
+    pub client: Client,
+}
+
+#[derive(Clone, Debug)]
+pub struct Products(pub HashMap<String, Product>);
+
+impl Products {
+    pub fn iter(&self) -> std::collections::hash_map::Iter<String, Product> {
+        self.0.iter()
+    }
+    pub fn get(&self, id: &str) -> Option<&Product> {
+        self.0.get(id)
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+    pub fn remove(&mut self, id: &str) -> Option<Product> {
+        self.0.remove(id)
+    }
+    pub fn insert(&mut self, id: String, product: Product) -> Option<Product> {
+        self.0.insert(id, product)
+    }
+}
+
+impl IntoIterator for Products {
+    type Item = (String, Product);
+    type IntoIter = std::collections::hash_map::IntoIter<String, Product>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
 
 impl Client {
     pub async fn products<T>(&self, ids: T) -> Result<Products, ClientError>
     where
         T: Debug + Serialize + Sized + Send + Sync,
     {
+        if self.inner.lock().unwrap().status != ClientStatus::Authorized {
+            return Err(ClientError::Unauthorized);
+        }
+
         let req = {
             let inner = self.inner.lock().unwrap();
             let base_url = &inner.account_config.product_search_url;
@@ -92,22 +208,25 @@ impl Client {
         match res.error_for_status() {
             Ok(res) => {
                 let mut body = res
-                    .json::<HashMap<String, HashMap<String, ProductInner>>>()
+                    .json::<HashMap<String, HashMap<String, ProductDetails>>>()
                     .await
                     .map_err(|_| ClientError::ProductParseError)?;
                 let m = body.remove("data").unwrap();
                 let mut hm = HashMap::new();
                 for (k, v) in m.into_iter() {
                     let product = Product {
-                        inner: Arc::new(v),
-                        client: self,
+                        inner: v,
+                        client: self.clone(),
                     };
                     hm.insert(k, product);
                 }
                 Ok(Products(hm))
             }
             Err(err) => match err.status().unwrap().as_u16() {
-                401 => Err(ClientError::Unauthorized),
+                401 => {
+                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
+                    Err(ClientError::Unauthorized)
+                }
                 _ => Err(ClientError::UnexpectedError {
                     source: Box::new(err),
                 }),
