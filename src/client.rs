@@ -116,13 +116,14 @@ pub struct ClientRef {
     pub status: ClientStatus,
     pub(crate) username: String,
     pub(crate) password: String,
-    pub(crate) session_id: String,
+    pub session_id: String,
     pub(crate) client_id: i32,
     pub(crate) int_account: i32,
     pub(crate) base_api_url: String,
     pub(crate) referer: String,
     pub account_config: AccountConfig,
     pub(crate) http_client: reqwest::Client,
+    pub cookie_jar: Arc<reqwest_cookie_store::CookieStoreMutex>,
     #[derivative(Debug = "ignore")]
     pub(crate) rate_limiter: Arc<RateLimiter>,
 }
@@ -134,33 +135,52 @@ pub struct Client {
 
 #[derive(Debug, Default)]
 pub struct ClientBuilder {
-    username: Option<String>,
-    password: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub cookie_jar: Option<Arc<reqwest_cookie_store::CookieStoreMutex>>,
 }
 
 impl ClientBuilder {
-    pub fn username(&mut self, username: &str) -> &mut Self {
+    pub fn username(mut self, username: &str) -> Self {
         self.username = Some(username.to_string());
 
         self
     }
 
-    pub fn password(&mut self, password: &str) -> &mut Self {
+    pub fn password(mut self, password: &str) -> Self {
         self.password = Some(password.to_string());
 
         self
     }
 
-    pub fn build(&self) -> Result<Client, reqwest::Error> {
+    pub fn cookie_jar(mut self, cookie_jar: Arc<reqwest_cookie_store::CookieStoreMutex>) -> Self {
+        self.cookie_jar = Some(cookie_jar);
+        self
+    }
+
+    pub fn from_env() -> Self {
+        let username = std::env::var("DEGIRO_USERNAME").expect("DEGIRO_USERNAME not found");
+        let password = std::env::var("DEGIRO_PASSWORD").expect("DEGIRO_PASSWORD not found");
+
+        Self {
+            username: Some(username),
+            password: Some(password),
+            cookie_jar: None,
+        }
+    }
+
+    pub fn build(&mut self) -> Result<Client, reqwest::Error> {
+        let cookie_jar = self.cookie_jar.take().unwrap_or_default();
         let http_client = reqwest::ClientBuilder::new()
             .https_only(true)
-            .cookie_store(true)
+            .cookie_provider(Arc::clone(&cookie_jar))
             .build()?;
 
         let client = Client::new(
             self.username.as_ref().unwrap().to_string(),
             self.password.as_ref().unwrap().to_string(),
             http_client,
+            cookie_jar,
         );
 
         Ok(client)
@@ -172,6 +192,7 @@ impl ClientRef {
         username: impl Into<String>,
         password: impl Into<String>,
         http_client: reqwest::Client,
+        cookie_jar: Arc<reqwest_cookie_store::CookieStoreMutex>,
     ) -> Self {
         let username = username.into();
         let password = password.into();
@@ -180,6 +201,7 @@ impl ClientRef {
             username,
             password,
             http_client,
+            cookie_jar,
             session_id: Default::default(),
             client_id: Default::default(),
             int_account: Default::default(),
@@ -203,21 +225,28 @@ impl Client {
         username: impl Into<String>,
         password: impl Into<String>,
         http_client: reqwest::Client,
+        cookie_jar: Arc<reqwest_cookie_store::CookieStoreMutex>,
     ) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(ClientRef::new(username, password, http_client))),
+            inner: Arc::new(Mutex::new(ClientRef::new(
+                username,
+                password,
+                http_client,
+                cookie_jar,
+            ))),
         }
     }
     pub fn new_from_env() -> Self {
         let username = std::env::var("DEGIRO_USERNAME").expect("DEGIRO_USERNAME not found");
         let password = std::env::var("DEGIRO_PASSWORD").expect("DEGIRO_PASSWORD not found");
 
+        let cookie_jar = Arc::new(reqwest_cookie_store::CookieStoreMutex::default());
         let http_client = reqwest::ClientBuilder::new()
             .https_only(true)
-            .cookie_store(true)
+            .cookie_provider(Arc::clone(&cookie_jar))
             .build()
             .unwrap();
 
-        Self::new(username, password, http_client)
+        Self::new(username, password, http_client, cookie_jar)
     }
 }

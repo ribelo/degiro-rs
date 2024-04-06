@@ -205,19 +205,19 @@ impl CreateOrderRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ModifyOrderRequest {
     #[serde(skip)]
-    id: String,
-    product_id: String,
+    pub id: String,
+    pub product_id: String,
     #[serde(rename = "buySell")]
-    transaction_type: TransactionType,
-    order_type: u8,
+    pub transaction_type: TransactionType,
+    pub order_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
-    price: Option<f64>,
-    size: u64,
+    pub price: Option<f64>,
+    pub size: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    stop_price: Option<f64>,
-    time_type: u8,
+    pub stop_price: Option<f64>,
+    pub time_type: u8,
     #[serde(skip)]
-    client: Client,
+    pub client: Client,
 }
 
 #[derive(Debug, Default)]
@@ -760,23 +760,23 @@ mod test {
         let res = req.send().await.unwrap();
         dbg!(&res);
     }
-    // #[tokio::test]
-    // async fn create_order() {
-    //     let client = Client::new_from_env();
-    //     client.login().await.unwrap();
-    //     client.account_config().await.unwrap();
-    //
-    //     let order_request = CreateOrderRequestBuilder::default()
-    //         .order_type(OrderType::Market)
-    //         .transaction_type(TransactionType::Sell)
-    //         .product_id(331860)
-    //         .size(4)
-    //         .stop_price(200.0)
-    //         .time_type(OrderTimeType::Gtc)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let resp = client.create_order(order_request).await;
-    //     dbg!(resp);
-    // }
+    #[tokio::test]
+    async fn create_order() {
+        let client = Client::new_from_env();
+        client.login().await.unwrap();
+        client.account_config().await.unwrap();
+
+        let order_request = CreateOrderRequestBuilder::default()
+            .order_type(OrderType::Market)
+            .transaction_type(TransactionType::Sell)
+            .product_id(15850348)
+            .size(4)
+            .stop_price(200.0)
+            .time_type(OrderTimeType::Gtc)
+            .build()
+            .unwrap();
+
+        let resp = client.create_order(order_request).await;
+        dbg!(resp);
+    }
 }

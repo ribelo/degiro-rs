@@ -5,7 +5,9 @@ use std::{collections::HashSet, fmt};
 use serde::{Deserialize, Serialize};
 use strum::{self, Display, EnumString};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, EnumString, PartialEq, Eq, Hash, Display)]
+#[derive(
+    Clone, Copy, Debug, Default, Serialize, Deserialize, EnumString, PartialEq, Eq, Hash, Display,
+)]
 pub enum Period {
     PT1S,
     PT1M,
