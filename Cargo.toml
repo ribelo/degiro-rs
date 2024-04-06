@@ -24,7 +24,7 @@ thiserror = "1.0"
 erfurt = { git = "https://github.com/ribelo/erfurt", optional = true }
 leaky-bucket = "1.0"
 chronoutil = "0.2"
-reqwest_cookie_store = "0.6.0"
+reqwest_cookie_store = "0.7.0"
 
 [features]
 erfurt = ["dep:erfurt"]
