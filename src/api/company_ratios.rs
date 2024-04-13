@@ -603,7 +603,6 @@ impl Client {
             let inner = self.inner.lock().unwrap();
             let base_url = "https://trader.degiro.nl/";
             let path_url = "dgtbxdsservice/company-ratios/";
-            // https://trader.degiro.nl/dgtbxdsservice/financial-statements/US14149Y1082?intAccount=71003134&sessionId=3373A4DF798147194546B8361D4D8387.prod_b_125_2
             let url = Url::parse(base_url)
                 .unwrap()
                 .join(path_url)
