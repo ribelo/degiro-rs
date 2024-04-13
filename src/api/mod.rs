@@ -3,6 +3,7 @@ pub mod company_ratios;
 pub mod curated_lists;
 pub mod financial_statements;
 pub mod login;
+pub mod news;
 pub mod orders;
 pub mod portfolio;
 pub mod product;
