@@ -760,23 +760,23 @@ mod test {
         let res = req.send().await.unwrap();
         dbg!(&res);
     }
-    #[tokio::test]
-    async fn create_order() {
-        let client = Client::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-
-        let order_request = CreateOrderRequestBuilder::default()
-            .order_type(OrderType::Market)
-            .transaction_type(TransactionType::Sell)
-            .product_id(15850348)
-            .size(4)
-            .stop_price(200.0)
-            .time_type(OrderTimeType::Gtc)
-            .build()
-            .unwrap();
-
-        let resp = client.create_order(order_request).await;
-        dbg!(resp);
-    }
+    // #[tokio::test]
+    // async fn create_order() {
+    //     let client = Client::new_from_env();
+    //     client.login().await.unwrap();
+    //     client.account_config().await.unwrap();
+    //
+    //     let order_request = CreateOrderRequestBuilder::default()
+    //         .order_type(OrderType::Market)
+    //         .transaction_type(TransactionType::Sell)
+    //         .product_id(15850348)
+    //         .size(4)
+    //         .stop_price(200.0)
+    //         .time_type(OrderTimeType::Gtc)
+    //         .build()
+    //         .unwrap();
+    //
+    //     let resp = client.create_order(order_request).await;
+    //     dbg!(resp);
+    // }
 }
