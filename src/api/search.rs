@@ -41,7 +41,7 @@ pub struct QueryProductDetails {
     pub order_book_depth: Option<i32>,
     pub order_book_depth_secondary: Option<i32>,
     pub order_time_types: OrderTimeTypes,
-    pub product_bit_types: Vec<String>,
+    pub product_bit_types: Option<Vec<String>>,
     pub product_type: String,
     pub product_type_id: i32,
     pub quality_switch_free: Option<bool>,
