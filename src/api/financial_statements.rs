@@ -33,24 +33,24 @@ pub struct Report {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IncomeStatementReport {
-    source: String,
-    period_type: String,
-    period_length: i32,
-    statement: Box<IncomeStatement>,
+    pub source: String,
+    pub period_type: String,
+    pub period_length: i32,
+    pub statement: Box<IncomeStatement>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BalanceSheetReport {
-    source: String,
-    statement: Box<BalanceSheet>,
+    pub source: String,
+    pub statement: Box<BalanceSheet>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CashFlowReport {
-    source: String,
-    period_type: String,
-    period_length: i32,
-    statement: Box<CashFlow>,
+    pub source: String,
+    pub period_type: String,
+    pub period_length: i32,
+    pub statement: Box<CashFlow>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
