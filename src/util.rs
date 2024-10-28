@@ -74,10 +74,10 @@ impl Period {
     }
 }
 
-impl std::ops::Add<&Period> for chrono::DateTime<chrono::Utc> {
+impl std::ops::Add<Period> for chrono::DateTime<chrono::Utc> {
     type Output = chrono::DateTime<chrono::Utc>;
 
-    fn add(self, rhs: &Period) -> Self::Output {
+    fn add(self, rhs: Period) -> Self::Output {
         match rhs {
             Period::PT1S => self + chrono::Duration::seconds(1),
             Period::PT1M => self + chrono::Duration::minutes(1),
@@ -95,11 +95,24 @@ impl std::ops::Add<&Period> for chrono::DateTime<chrono::Utc> {
     }
 }
 
-impl std::ops::Add<Period> for chrono::DateTime<chrono::Utc> {
-    type Output = chrono::DateTime<chrono::Utc>;
+impl std::ops::Add<Period> for chrono::NaiveDate {
+    type Output = chrono::NaiveDate;
 
     fn add(self, rhs: Period) -> Self::Output {
-        self + &rhs
+        match rhs {
+            Period::PT1S => self + chrono::Duration::seconds(1),
+            Period::PT1M => self + chrono::Duration::minutes(1),
+            Period::PT1H => self + chrono::Duration::hours(1),
+            Period::P1D => self + chrono::Duration::days(1),
+            Period::P1W => self + chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(self, 1),
+            Period::P3M => chronoutil::delta::shift_months(self, 3),
+            Period::P6M => chronoutil::delta::shift_months(self, 6),
+            Period::P1Y => chronoutil::delta::shift_years(self, 1),
+            Period::P3Y => chronoutil::delta::shift_years(self, 3),
+            Period::P5Y => chronoutil::delta::shift_years(self, 5),
+            Period::P50Y => chronoutil::delta::shift_years(self, 50),
+        }
     }
 }
 

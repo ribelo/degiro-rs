@@ -1,4 +1,5 @@
 pub mod account;
+pub mod company_profile;
 pub mod company_ratios;
 pub mod curated_lists;
 pub mod financial_statements;

@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     fmt::{self, Debug},
-    sync::Arc,
 };
 
 use chrono::NaiveDate;
@@ -17,8 +16,9 @@ use crate::{
 #[derive(Clone, Debug, Deserialize, Derivative, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProductDetails {
+    #[serde(default)]
     pub active: bool,
-    pub buy_order_types: AllowedOrderTypes,
+    pub buy_order_types: Option<AllowedOrderTypes>,
     pub category: ProductCategory,
     pub close_price: f64,
     pub close_price_date: NaiveDate,
@@ -29,25 +29,31 @@ pub struct ProductDetails {
     pub id: String,
     pub isin: String,
     pub name: String,
+    #[serde(default)]
     pub only_eod_prices: bool,
-    pub order_book_depth: i32,
+    pub order_book_depth: Option<i32>,
     pub order_book_depth_secondary: Option<i32>,
-    pub order_time_types: OrderTimeTypes,
-    pub product_bit_types: Vec<String>,
+    pub order_time_types: Option<OrderTimeTypes>,
+    pub product_bit_types: Option<Vec<String>>,
     pub product_type: String,
     pub product_type_id: i32,
+    #[serde(default)]
     pub quality_switch_free: bool,
-    pub quality_switch_free_secondary: Option<bool>,
+    #[serde(default)]
+    pub quality_switch_free_secondary: bool,
+    #[serde(default)]
     pub quality_switchable: bool,
-    pub quality_switchable_secondary: Option<bool>,
-    pub sell_order_types: AllowedOrderTypes,
+    #[serde(default)]
+    pub quality_switchable_secondary: bool,
+    pub sell_order_types: Option<AllowedOrderTypes>,
     pub symbol: String,
+    #[serde(default)]
     pub tradable: bool,
-    pub vwd_id: String,
+    pub vwd_id: Option<String>,
     pub vwd_id_secondary: Option<String>,
-    pub vwd_identifier_type: String,
+    pub vwd_identifier_type: Option<String>,
     pub vwd_identifier_type_secondary: Option<String>,
-    pub vwd_module_id: i32,
+    pub vwd_module_id: Option<i32>,
     pub vwd_module_id_secondary: Option<i32>,
 }
 
@@ -66,25 +72,27 @@ impl fmt::Display for ProductDetails {
         writeln!(
             f,
             "Feed Quality: {}",
-            self.feed_quality.as_ref().unwrap_or(&"N/A".to_string())
+            self.feed_quality.as_deref().unwrap_or("N/A")
         )?;
         writeln!(
             f,
             "Feed Quality Secondary: {}",
-            self.feed_quality_secondary
-                .as_ref()
-                .unwrap_or(&"N/A".to_string())
+            self.feed_quality_secondary.as_deref().unwrap_or("N/A")
         )?;
         writeln!(f, "ID: {}", self.id)?;
         writeln!(f, "Only EOD Prices: {}", self.only_eod_prices)?;
-        writeln!(f, "Order Book Depth: {}", self.order_book_depth)?;
+        writeln!(
+            f,
+            "Order Book Depth: {}",
+            self.order_book_depth.unwrap_or(-1)
+        )?;
         writeln!(
             f,
             "Order Book Depth Secondary: {}",
             self.order_book_depth_secondary
                 .map_or("N/A".to_string(), |v| v.to_string())
         )?;
-        writeln!(f, "Order Time Types: {}", self.order_time_types)?;
+        writeln!(f, "Order Time Types: {:?}", self.order_time_types)?;
         writeln!(f, "Product Bit Types: {:?}", self.product_bit_types)?;
         writeln!(f, "Product Type: {}", self.product_type)?;
         writeln!(f, "Product Type ID: {}", self.product_type_id)?;
@@ -93,39 +101,45 @@ impl fmt::Display for ProductDetails {
             f,
             "Quality Switch Free Secondary: {}",
             self.quality_switch_free_secondary
-                .map_or("N/A".to_string(), |v| v.to_string())
         )?;
         writeln!(f, "Quality Switchable: {}", self.quality_switchable)?;
         writeln!(
             f,
             "Quality Switchable Secondary: {}",
             self.quality_switchable_secondary
-                .map_or("N/A".to_string(), |v| v.to_string())
         )?;
-        writeln!(f, "Sell Order Types: {}", self.sell_order_types)?;
+        writeln!(f, "Sell Order Types: {:?}", self.sell_order_types)?;
         writeln!(f, "Tradable: {}", self.tradable)?;
-        writeln!(f, "VWD ID: {}", self.vwd_id)?;
+        writeln!(f, "VWD ID: {}", self.vwd_id.as_deref().unwrap_or("N/A"))?;
         writeln!(
             f,
             "VWD ID Secondary: {}",
-            self.vwd_id_secondary.as_ref().unwrap_or(&"N/A".to_string())
+            self.vwd_id_secondary.as_deref().unwrap_or("N/A")
         )?;
-        writeln!(f, "VWD Identifier Type: {}", self.vwd_identifier_type)?;
+        writeln!(
+            f,
+            "VWD Identifier Type: {}",
+            self.vwd_identifier_type.as_deref().unwrap_or("N/A")
+        )?;
         writeln!(
             f,
             "VWD Identifier Type Secondary: {}",
             self.vwd_identifier_type_secondary
-                .as_ref()
-                .unwrap_or(&"N/A".to_string())
+                .as_deref()
+                .unwrap_or("N/A")
         )?;
-        writeln!(f, "VWD Module ID: {}", self.vwd_module_id)?;
+        writeln!(
+            f,
+            "VWD Module ID: {}",
+            self.vwd_module_id
+                .map_or("N/A".to_string(), |v| v.to_string())
+        )?;
         writeln!(
             f,
             "VWD Module ID Secondary: {}",
             self.vwd_module_id_secondary
                 .map_or("N/A".to_string(), |v| v.to_string())
         )?;
-
         Ok(())
     }
 }
@@ -210,7 +224,7 @@ impl Client {
                 let mut body = res
                     .json::<HashMap<String, HashMap<String, ProductDetails>>>()
                     .await
-                    .map_err(|_| ClientError::ProductParseError)?;
+                    .map_err(ClientError::RequestError)?;
                 let m = body.remove("data").unwrap();
                 let mut hm = HashMap::new();
                 for (k, v) in m.into_iter() {

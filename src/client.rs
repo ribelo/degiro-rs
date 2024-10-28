@@ -137,6 +137,7 @@ pub struct Client {
 pub struct ClientBuilder {
     pub username: Option<String>,
     pub password: Option<String>,
+    pub secret_key: Option<String>,
     pub cookie_jar: Option<Arc<reqwest_cookie_store::CookieStoreMutex>>,
 }
 
@@ -161,10 +162,12 @@ impl ClientBuilder {
     pub fn from_env() -> Self {
         let username = std::env::var("DEGIRO_USERNAME").expect("DEGIRO_USERNAME not found");
         let password = std::env::var("DEGIRO_PASSWORD").expect("DEGIRO_PASSWORD not found");
+        let secret = std::env::var("DEGIRO_SECRET").expect("DEGIRO_PASSWORD not found");
 
         Self {
             username: Some(username),
             password: Some(password),
+            secret_key: Some(secret),
             cookie_jar: None,
         }
     }

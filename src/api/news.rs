@@ -9,7 +9,7 @@ use crate::client::{Client, ClientError, ClientStatus};
 pub struct News {
     pub id: String,
     pub date: DateTime<Utc>,
-    pub last_updated: DateTime<Utc>,
+    pub last_updated: Option<DateTime<Utc>>,
     pub title: String,
     pub brief: Option<String>,
     pub content: String,
@@ -17,35 +17,53 @@ pub struct News {
     pub language: String,
     pub category: Option<String>,
     pub isins: Vec<String>,
-    pub provider: String,
+    pub provider: Option<String>,
     pub html_content: bool,
 }
 
 impl News {
     pub fn new(item: &serde_json::Value) -> Self {
-        let source = match item["source"].as_str().unwrap() {
-            "REFINITIV_LATEST_NEWS" => Source::RefinitivLatestNews,
-            "REFINITIV_TOP_NEWS" => Source::RefinitivTopNews,
-            other => Source::Unknown(other.to_string()),
+        let source = match item["source"].as_str() {
+            Some("REFINITIV_LATEST_NEWS") => Source::RefinitivLatestNews,
+            Some("REFINITIV_TOP_NEWS") => Source::RefinitivTopNews,
+            Some(other) => Source::Unknown(other.to_string()),
+            None => Source::Unknown(String::new()),
         };
         Self {
-            id: item["id"].as_str().unwrap().to_string(),
-            date: item["date"].as_str().unwrap().parse().unwrap(),
-            last_updated: item["lastUpdated"].as_str().unwrap().parse().unwrap(),
-            title: item["title"].as_str().unwrap().to_string(),
+            id: item["id"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
+            date: item["date"]
+                .as_str()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or_else(Utc::now),
+            last_updated: item["lastUpdated"].as_str().and_then(|s| s.parse().ok()),
+            title: item["title"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
             brief: item["brief"].as_str().map(|s| s.to_string()),
-            content: item["content"].as_str().unwrap().to_string(),
+            content: item["content"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
             source,
-            language: item["language"].as_str().unwrap().to_string(),
+            language: item["language"]
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_default(),
             category: item["category"].as_str().map(|s| s.to_string()),
             isins: item["isins"]
                 .as_array()
-                .unwrap()
-                .iter()
-                .map(|isin| isin.as_str().unwrap().to_string())
-                .collect(),
-            provider: item["provider"].as_str().unwrap().to_string(),
-            html_content: item["htmlContent"].as_bool().unwrap(),
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|isin| isin.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            provider: item["provider"].as_str().map(|s| s.to_string()),
+            html_content: item["htmlContent"].as_bool().unwrap_or(false),
         }
     }
 }
@@ -59,6 +77,10 @@ pub enum Source {
 }
 
 impl Client {
+    pub async fn company_news_by_id<T: AsRef<str>>(&self, id: T) -> Result<Vec<News>, ClientError> {
+        let isin = &self.product(id.as_ref()).await?.inner.isin;
+        self.company_news(isin).await
+    }
     pub async fn company_news<T: AsRef<str>>(&self, isin: T) -> Result<Vec<News>, ClientError> {
         if self.inner.lock().unwrap().status != ClientStatus::Authorized {
             return Err(ClientError::Unauthorized);

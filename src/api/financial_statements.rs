@@ -16,8 +16,15 @@ pub struct FinancialReports {
 impl FinancialReports {
     pub fn get_annual(&self, fiscal_year: i32) -> Option<&Report> {
         self.annual
-            .get(fiscal_year)
-            .or_else(|| self.interim.get(fiscal_year))
+            .0
+            .iter()
+            .find(|report| report.fiscal_year == fiscal_year)
+    }
+    pub fn get_interim(&self, fiscal_year: i32, end_date: NaiveDate) -> Option<&Report> {
+        self.interim
+            .0
+            .iter()
+            .find(|report| report.fiscal_year == fiscal_year && report.end_date == end_date)
     }
 }
 
@@ -59,14 +66,6 @@ pub struct Reports(Vec<Report>);
 impl From<Vec<Report>> for Reports {
     fn from(reports: Vec<Report>) -> Self {
         Self(reports)
-    }
-}
-
-impl Reports {
-    pub fn get(&self, fiscal_year: i32) -> Option<&Report> {
-        self.0
-            .iter()
-            .find(|report| report.fiscal_year == fiscal_year)
     }
 }
 
@@ -910,20 +909,69 @@ impl Report {
             current_price / eps
         }
     }
-}
 
-#[cfg(test)]
-mod test {
+    pub fn free_cash_flow(&self) -> f64 {
+        self.cash_flow.statement.otlo.value - self.cash_flow.statement.scex.value
+    }
 
-    use crate::client::Client;
+    pub fn cash_conversion_cycle(&self) -> f64 {
+        let inventory = self.total_inventory();
+        let accounts_payable = self.accounts_payable();
+        let revenue = self.revenue();
+        if revenue == 0.0 {
+            0.0
+        } else {
+            (inventory + accounts_payable) / revenue
+        }
+    }
 
-    #[tokio::test]
-    async fn financial_statements() {
-        let client = Client::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+    pub fn debt_to_equity(&self) -> f64 {
+        let total_debt = self.total_debt();
+        let total_equity = self.total_equity();
+        if total_equity == 0.0 {
+            0.0
+        } else {
+            total_debt / total_equity
+        }
+    }
 
-        let report = client.financial_statements_by_id("15850348").await.unwrap();
-        println!("{:#?}", report);
+    pub fn net_debt_to_ebitda(&self) -> f64 {
+        let net_debt = self.total_debt() - self.cash_and_short_term_investments();
+        let ebitda = self.ebitda();
+        if ebitda == 0.0 {
+            0.0
+        } else {
+            net_debt / ebitda
+        }
+    }
+
+    pub fn days_inventory_outstanding(&self) -> f64 {
+        let inventory = self.total_inventory();
+        let cost_of_revenue = self.cost_of_revenue();
+        if cost_of_revenue == 0.0 {
+            0.0
+        } else {
+            inventory / (cost_of_revenue / 365.0)
+        }
+    }
+
+    pub fn days_sales_outstanding(&self) -> f64 {
+        let accounts_receivable = self.accounts_receivable_trade_net();
+        let revenue = self.revenue();
+        if revenue == 0.0 {
+            0.0
+        } else {
+            accounts_receivable / (revenue / 365.0)
+        }
+    }
+
+    pub fn days_payables_outstanding(&self) -> f64 {
+        let accounts_payable = self.accounts_payable();
+        let cost_of_revenue = self.cost_of_revenue();
+        if cost_of_revenue == 0.0 {
+            0.0
+        } else {
+            accounts_payable / (cost_of_revenue / 365.0)
+        }
     }
 }

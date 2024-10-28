@@ -193,6 +193,9 @@ impl Client {
         }
 
         let product = self.product(id).await?;
+        let Some(vwd_id) = product.inner.vwd_id else {
+            return Err(ClientError::NoData);
+        };
 
         let req = {
             let inner = self.inner.lock().unwrap();
@@ -207,7 +210,7 @@ impl Client {
                     ("format", "json".to_string()),
                     ("resolution", interval.to_string()),
                     ("period", period.to_string()),
-                    ("series", format!("ohlc:issueid:{}", &product.inner.vwd_id)),
+                    ("series", format!("ohlc:issueid:{}", vwd_id)),
                     ("userToken", inner.client_id.to_string()),
                 ])
                 .header(header::REFERER, &inner.referer)
@@ -269,11 +272,11 @@ mod test {
     use crate::{client::Client, util::Period};
 
     #[tokio::test]
-    async fn quotes() {
+    async fn test_quotes() {
         let client = Client::new_from_env();
         client.login().await.unwrap();
         client.account_config().await.unwrap();
-        let product = client.product("17461000").await.unwrap();
+        let product = client.product("332111").await.unwrap();
         let quotes = product.quotes(Period::P1Y, Period::P1D).await.unwrap();
         dbg!(quotes);
     }

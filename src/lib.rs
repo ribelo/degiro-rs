@@ -1,5 +1,8 @@
-pub mod client;
 pub mod api;
-pub mod util;
+pub mod client;
 pub mod money;
-pub mod prelude;
+pub mod util;
+
+pub mod prelude {
+    pub use crate::client::Client;
+}
