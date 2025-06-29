@@ -1,4 +1,7 @@
-use crate::client::{Client, ClientError, ClientStatus};
+use crate::{
+    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    paths::{LOGIN_URL_PATH, REFERER},
+};
 
 use mime;
 use reqwest::{header, Url};
@@ -15,62 +18,77 @@ struct LoginResponse {
     status_text: String,
 }
 
-impl Client {
+impl Degiro {
     pub async fn authorize(&self) -> Result<(), ClientError> {
         self.login().await?;
         self.account_config().await?;
         Ok(())
     }
+
+    pub fn get_totp(&self) -> Result<String, ClientError> {
+        let decoded_secret = base32::decode(
+            base32::Alphabet::Rfc4648 { padding: false },
+            &self.totp_secret,
+        )
+        .ok_or(ClientError::UnexpectedError("Invalid base32".to_string()))?;
+
+        let totp = totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, decoded_secret)
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
+
+        let token = totp
+            .generate_current()
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
+
+        Ok(token)
+    }
+
     pub async fn login(&self) -> Result<(), ClientError> {
-        let req = {
-            let inner = self.inner.lock().unwrap();
-            let base_url = &inner.base_api_url;
-            let path_url = "login/secure/login";
+        let totp = self.get_totp()?;
 
-            let url = Url::parse(base_url)
-                .unwrap_or_else(|_| panic!("can't parse base_url: {base_url}"))
-                .join(path_url)
-                .unwrap_or_else(|_| panic!("can't join path_url: {path_url}"));
-            let body = json!({
-                "isPassCodeReset": false,
-                "isRedirectToMobile": false,
-                "password": inner.password,
-                "username": inner.username,
-            });
+        // Build login URL
+        let url = Url::parse(crate::paths::BASE_API_URL)
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
+            .join(LOGIN_URL_PATH)
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
+            .join("totp")
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
 
-            inner
-                .http_client
-                .post(url)
-                .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
-                .header(header::REFERER, &inner.referer)
-                .json(&body)
-                .query(&[("reason", "session_expired")])
-        };
+        let body = json!({
+            "isPassCodeReset": false,
+            "isRedirectToMobile": false,
+            "password": self.password,
+            "username": self.username,
+            "oneTimePassword": totp,
+        });
 
-        let rate_limiter = {
-            let inner = self.inner.lock().unwrap();
-            inner.rate_limiter.clone()
-        };
-        rate_limiter.acquire_one().await;
+        self.acquire_limit().await;
 
-        let res = req.send().await?;
+        let res = self
+            .http_client
+            .post(url)
+            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string())
+            .header(header::REFERER, REFERER)
+            .json(&body)
+            .query(&[("reason", "session_expired")])
+            .send()
+            .await?;
 
-        match res.error_for_status() {
-            Ok(res) => {
-                let body = res.json::<LoginResponse>().await.expect("can't parse json");
-
-                {
-                    let mut inner = self.inner.lock().unwrap();
-                    inner.session_id = body.session_id.unwrap();
-                    inner.status = ClientStatus::Restricted;
-                };
-
-                Ok(())
-            }
-            Err(err) => Err(ClientError::LoginError {
-                source: Box::new(err),
-            }),
+        if res.error_for_status_ref().is_err() {
+            let text = res.text().await?;
+            let error_response: ApiErrorResponse = serde_json::from_str(&text)?;
+            return Err(ClientError::ApiError(error_response));
         }
+
+        let body = res.json::<LoginResponse>().await?;
+
+        let session_id = match body.session_id {
+            Some(id) => id,
+            None => return Err(ClientError::Unauthorized),
+        };
+
+        self.set_session_id(session_id);
+        self.set_auth_state(ClientStatus::Restricted);
+        Ok(())
     }
 }
 
@@ -79,9 +97,15 @@ mod test {
     use super::*;
 
     #[tokio::test]
-    async fn login() {
-        let client = Client::new_from_env();
+    async fn test_login() {
+        let client = Degiro::new_from_env();
         client.login().await.unwrap();
-        dbg!(&client);
+    }
+
+    #[test]
+    fn test_totp() {
+        let client = Degiro::new_from_env();
+        let totp = client.get_totp().unwrap();
+        println!("TOTP: {}", totp);
     }
 }

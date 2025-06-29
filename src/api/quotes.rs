@@ -1,19 +1,15 @@
-use chrono::{DateTime, NaiveDateTime, Utc};
-#[cfg(feature = "erfurt")]
-use erfurt::candle::{Candle, Candles, CandlesExt};
+use std::ops::{Deref, DerefMut};
+
+use chrono::NaiveDateTime;
 use reqwest::{header, Url};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    client::{Client, ClientError, ClientStatus},
-    util::Period,
+    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    models::Period,
+    paths::REFERER,
 };
-
-use super::product::Product;
-
-#[derive(Debug, Deserialize)]
-struct CandlesData(Vec<Ohlc>);
 
 #[derive(Debug, Deserialize)]
 struct Ohlc {
@@ -24,260 +20,228 @@ struct Ohlc {
     c: f64,
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct Quotes {
-    pub id: String,
-    pub open: Vec<f64>,
-    pub high: Vec<f64>,
-    pub low: Vec<f64>,
-    pub close: Vec<f64>,
-    pub volume: Option<Vec<f64>>,
-    pub time: Vec<DateTime<Utc>>,
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
+pub struct Candle {
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub time: NaiveDateTime,
 }
 
-#[cfg(feature = "erfurt")]
-impl CandlesExt for Quotes {
-    fn get(&self, index: usize) -> Option<erfurt::candle::Candle> {
-        if index < self.time.len() {
-            let symbol = &self.id;
-            let open = self.open[index];
-            let high = self.high[index];
-            let low = self.low[index];
-            let close = self.close[index];
-            let volume = self.volume.as_ref().map(|x| x[index]);
-            let time = self.time[index];
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Candles {
+    pub interval: Period,
+    pub data: Vec<Candle>,
+}
 
-            Some(Candle {
-                id: symbol.clone(),
-                open,
-                high,
-                low,
-                close,
-                volume,
-                time,
-            })
-        } else {
-            None
-        }
-    }
+impl Deref for Candles {
+    type Target = Vec<Candle>;
 
-    fn open(&self) -> &Vec<f64> {
-        &self.open
-    }
-
-    fn high(&self) -> &Vec<f64> {
-        &self.high
-    }
-
-    fn low(&self) -> &Vec<f64> {
-        &self.low
-    }
-
-    fn close(&self) -> &Vec<f64> {
-        &self.close
-    }
-
-    fn volume(&self) -> &Option<Vec<f64>> {
-        &self.volume
-    }
-
-    fn time(&self) -> &Vec<DateTime<Utc>> {
-        &self.time
-    }
-
-    fn last(&self) -> Option<erfurt::candle::Candle> {
-        self.time.last().map(|time| Candle {
-            id: self.id.clone(),
-            open: *self.open.last().unwrap(),
-            high: *self.high.last().unwrap(),
-            low: *self.low.last().unwrap(),
-            close: *self.close.last().unwrap(),
-            volume: self.volume.as_ref().map(|xs| *xs.last().unwrap()),
-            time: *time,
-        })
-    }
-
-    fn take_last(&self, n: usize) -> Option<Candles> {
-        let len = self.time.len();
-        if len < n {
-            None
-        } else {
-            let id = self.id.clone();
-            let open = self.open[len - n..].to_vec();
-            let high = self.high[len - n..].to_vec();
-            let low = self.low[len - n..].to_vec();
-            let close = self.close[len - n..].to_vec();
-            let volume = self
-                .volume
-                .as_ref()
-                .map(|xs| xs[len - n..].to_vec())
-                .filter(|xs| xs.len() == n);
-            let time = self.time[len - n..].to_vec();
-            Some(Candles {
-                id,
-                open,
-                high,
-                low,
-                close,
-                volume,
-                time,
-            })
-        }
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
-impl CandlesData {
-    pub fn as_quotes(
-        &self,
-        id: impl Into<String>,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        interval: Period,
-    ) -> Quotes {
-        let mut quotes = Quotes {
-            id: id.into().to_uppercase(),
-            ..Default::default()
-        };
-        for (i, x) in self.0.iter().enumerate() {
-            let mut dt = (0..x.n).fold(start, |acc, _| acc + interval);
-            match interval {
-                Period::P1M
-                | Period::P3M
-                | Period::P6M
-                | Period::P1Y
-                | Period::P3Y
-                | Period::P5Y
-                | Period::P50Y => {
-                    if i != self.0.len() - 1 {
-                        dt = chronoutil::delta::with_day(dt, 31).unwrap();
-                    } else {
-                        dt = end;
-                    }
-                }
-                _ => (),
+impl DerefMut for Candles {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.data
+    }
+}
+
+impl Candles {
+    pub fn retain_incompleted(mut self) -> Self {
+        if self.data.len() <= 1 {
+            return self;
+        }
+
+        if let Some(last) = self.data.last() {
+            if last.time < self.data[self.data.len() - 2].time + self.interval {
+                self.data.pop();
             }
-            quotes.time.push(dt);
-            quotes.open.push(x.o);
-            quotes.high.push(x.h);
-            quotes.low.push(x.l);
-            quotes.close.push(x.c);
         }
-        quotes
+        self
+    }
+
+    pub fn retain_by_min_periods(self, n: u32, period: Period) -> Self {
+        if self.data.len() < 2 {
+            return self;
+        }
+
+        // Check last candle against previous candle
+        let last_idx = self.data.len() - 1;
+        let prev_idx = last_idx - 1;
+
+        let periods_elapsed = (0..n).fold(self.data[prev_idx].time, |acc, _| acc + period);
+        if periods_elapsed > self.data[last_idx].time {
+            return Candles {
+                interval: self.interval,
+                data: self.data[..last_idx].to_vec(),
+            };
+        }
+
+        self
     }
 }
 
-#[cfg(feature = "erfurt")]
-impl From<Quotes> for Candles {
-    fn from(quotes: Quotes) -> Self {
-        Candles {
-            id: quotes.id,
-            open: quotes.open,
-            high: quotes.high,
-            low: quotes.low,
-            close: quotes.close,
-            volume: quotes.volume,
-            time: quotes.time,
-        }
-    }
+fn ohlc_vec_to_candles(
+    start: NaiveDateTime,
+    end: NaiveDateTime,
+    interval: Period,
+    ohlc: Vec<Ohlc>,
+) -> Result<Candles, ClientError> {
+    let data = ohlc
+        .iter()
+        .enumerate()
+        .map(|(i, x)| -> Result<Candle, ClientError> {
+            let time = if matches!(
+                interval,
+                Period::P1M
+                    | Period::P3M
+                    | Period::P6M
+                    | Period::P1Y
+                    | Period::P3Y
+                    | Period::P5Y
+                    | Period::P50Y
+            ) {
+                if i != ohlc.len() - 1 {
+                    chronoutil::delta::with_day((0..x.n).fold(start, |acc, _| acc + interval), 31)
+                        .ok_or_else(|| {
+                        ClientError::UnexpectedError("Failed to compute month delta".into())
+                    })?
+                } else {
+                    end
+                }
+            } else {
+                (0..x.n).fold(start, |acc, _| acc + interval)
+            };
+
+            Ok(Candle {
+                time,
+                open: x.o,
+                high: x.h,
+                low: x.l,
+                close: x.c,
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Candles { interval, data })
 }
 
-impl Client {
-    pub async fn quotes(
+impl Degiro {
+    pub async fn quotes_by_id(
         &self,
-        id: &str,
+        isin: impl AsRef<str>,
         period: Period,
         interval: Period,
-    ) -> Result<Quotes, ClientError> {
-        if self.inner.lock().unwrap().status != ClientStatus::Authorized {
-            return Err(ClientError::Unauthorized);
-        }
-
-        let product = self.product(id).await?;
-        let Some(vwd_id) = product.inner.vwd_id else {
-            return Err(ClientError::NoData);
+    ) -> Result<Option<Candles>, ClientError> {
+        let Some(product) = self.product(isin.as_ref()).await? else {
+            return Ok(None);
         };
+        let Some(vwd_id) = product.vwd_id else {
+            return Ok(None);
+        };
+        self.quotes(vwd_id.as_str(), period, interval).await
+    }
+    pub async fn quotes(
+        &self,
+        vwd_id: impl AsRef<str>,
+        period: Period,
+        interval: Period,
+    ) -> Result<Option<Candles>, ClientError> {
+        let vwd_id = vwd_id.as_ref();
+        self.ensure_authorized().await?;
 
         let req = {
-            let inner = self.inner.lock().unwrap();
             let base_url = "https://charting.vwdservices.com/hchart/v1/deGiro/data.js";
-            let url = Url::parse(base_url).unwrap();
+            let url =
+                Url::parse(base_url).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
 
-            inner
-                .http_client
+            self.http_client
                 .get(url)
                 .query(&[
-                    ("requestid", 1.to_string()),
-                    ("format", "json".to_string()),
-                    ("resolution", interval.to_string()),
-                    ("period", period.to_string()),
-                    ("series", format!("ohlc:issueid:{}", vwd_id)),
-                    ("userToken", inner.client_id.to_string()),
+                    ("requestid", "1"),
+                    ("format", "json"),
+                    ("resolution", &interval.to_string()),
+                    ("period", &period.to_string()),
+                    ("series", &format!("ohlc:issueid:{}", vwd_id)),
+                    ("userToken", &self.client_id().to_string()),
                 ])
-                .header(header::REFERER, &inner.referer)
+                .header(header::REFERER, REFERER)
         };
 
-        let rate_limiter = {
-            let inner = self.inner.lock().unwrap();
-            inner.rate_limiter.clone()
-        };
-        rate_limiter.acquire_one().await;
+        self.acquire_limit().await;
 
         let res = req.send().await?;
 
-        match res.error_for_status() {
-            Ok(res) => {
-                let body = res.json::<Value>().await?;
-                let error = body
-                    .get("series")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.first())
-                    .and_then(|obj| obj.get("error"))
-                    .and_then(|error| error.as_str());
+        if let Err(err) = res.error_for_status_ref() {
+            let Some(status) = err.status() else {
+                return Err(ClientError::UnexpectedError(err.to_string()));
+            };
 
-                if let Some(error) = error {
-                    return Err(ClientError::Descripted(error.to_string()));
-                }
-
-                let start = serde_json::from_value::<NaiveDateTime>(body["start"].clone())?;
-                let start: DateTime<Utc> = DateTime::from_naive_utc_and_offset(start, Utc);
-                let end = serde_json::from_value::<NaiveDateTime>(body["end"].clone())?;
-                let end: DateTime<Utc> = DateTime::from_naive_utc_and_offset(end, Utc);
-                let series = body["series"].as_array().unwrap();
-                let data = series.first().unwrap()["data"].clone();
-                let candles = serde_json::from_value::<CandlesData>(data)?;
-                let quotes = candles.as_quotes(&product.inner.id, start, end, interval);
-                Ok(quotes)
+            if status.as_u16() == 401 {
+                self.set_auth_state(ClientStatus::Unauthorized);
+                return Err(ClientError::Unauthorized);
             }
-            Err(err) => match err.status() {
-                Some(status) if status.as_u16() == 401 => {
-                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
-                    Err(ClientError::Unauthorized)
-                }
-                _ => Err(ClientError::UnexpectedError {
-                    source: Box::new(err),
-                }),
-            },
-        }
-    }
-}
 
-impl Product {
-    pub async fn quotes(&self, period: Period, interval: Period) -> Result<Quotes, ClientError> {
-        self.client.quotes(&self.inner.id, period, interval).await
+            let error_response = res.json::<ApiErrorResponse>().await?;
+            return Err(ClientError::ApiError(error_response));
+        }
+
+        let mut body = res.json::<Value>().await?;
+
+        let error = body
+            .get("series")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+            .and_then(|obj| obj.get("error"))
+            .and_then(|error| error.as_str());
+
+        if let Some(error) = error {
+            return Err(ClientError::UnexpectedError(error.to_string()));
+        }
+
+        let start = body
+            .get("start")
+            .ok_or_else(|| ClientError::UnexpectedError("Missing start timestamp".into()))?;
+        let start = serde_json::from_value::<NaiveDateTime>(start.clone())?;
+
+        let end = body
+            .get("end")
+            .ok_or_else(|| ClientError::UnexpectedError("Missing end timestamp".into()))?;
+        let end = serde_json::from_value::<NaiveDateTime>(end.clone())?;
+
+        let data = body
+            .get_mut("series")
+            .and_then(|s| s.as_array_mut())
+            .and_then(|arr| arr.first_mut())
+            .and_then(|s| s.get_mut("data"))
+            .map(|d| d.take())
+            .ok_or_else(|| {
+                ClientError::UnexpectedError("Missing or invalid data in series".to_string())
+            })?;
+
+        let ohlc_vec = serde_json::from_value::<Vec<Ohlc>>(data)?;
+        Ok(Some(ohlc_vec_to_candles(start, end, interval, ohlc_vec)?))
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{client::Client, util::Period};
+    use super::*;
 
     #[tokio::test]
     async fn test_quotes() {
-        let client = Client::new_from_env();
+        let client = Degiro::new_from_env();
         client.login().await.unwrap();
         client.account_config().await.unwrap();
-        let product = client.product("332111").await.unwrap();
-        let quotes = product.quotes(Period::P1Y, Period::P1D).await.unwrap();
+        let quotes = client
+            .quotes_by_id("332111", Period::P1Y, Period::P1M)
+            .await
+            .ok()
+            .flatten()
+            .map(|c| c.retain_by_min_periods(15, Period::P1D));
         dbg!(quotes);
     }
 }

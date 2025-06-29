@@ -2,14 +2,20 @@ use chrono::{DateTime, FixedOffset, NaiveDate};
 use reqwest::{header, Url};
 use serde::{Deserialize, Serialize};
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
-use crate::client::{Client, ClientError, ClientStatus};
-use crate::util::TransactionType;
+use crate::{
+    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    models::TransactionType,
+    paths::REPORTING_URL,
+};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TransactionDetails {
+pub struct Transaction {
     pub auto_fx_fee_in_base_currency: f64,
     #[serde(rename = "buysell")]
     pub transaction_type: TransactionType,
@@ -34,73 +40,20 @@ pub struct TransactionDetails {
     pub transfered: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Transaction {
-    pub inner: TransactionDetails,
-    #[serde(skip)]
-    pub client: Option<Client>,
-}
-
-impl Transaction {
-    pub fn new(details: TransactionDetails, client: Client) -> Self {
-        Self {
-            inner: details,
-            client: Some(client),
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transactions(pub Vec<Transaction>);
 
-impl Transactions {
-    pub fn new(inner: Vec<Transaction>) -> Self {
-        Self(inner)
+impl Deref for Transactions {
+    type Target = Vec<Transaction>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
-    pub fn iter(&self) -> std::slice::Iter<Transaction> {
-        self.0.iter()
-    }
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-    pub fn first(&self) -> Option<&Transaction> {
-        self.0.first()
-    }
-    pub fn last(&self) -> Option<&Transaction> {
-        self.0.last()
-    }
-    pub fn get(&self, index: usize) -> Option<&Transaction> {
-        self.0.get(index)
-    }
-    pub fn into_inner(self) -> Vec<Transaction> {
-        self.0
-    }
-    pub fn append(&mut self, other: &mut Self) {
-        self.0.append(&mut other.0);
-    }
-    pub fn push(&mut self, other: Transaction) {
-        self.0.push(other);
-    }
-    pub fn pop(&mut self) -> Option<Transaction> {
-        self.0.pop()
-    }
-    pub fn remove(&mut self, index: usize) -> Transaction {
-        self.0.remove(index)
-    }
-    pub fn clear(&mut self) {
-        self.0.clear();
-    }
-    pub fn as_slice(&self) -> &[Transaction] {
-        self.0.as_slice()
-    }
-    pub fn as_mut_slice(&mut self) -> &mut [Transaction] {
-        self.0.as_mut_slice()
-    }
-    pub fn into_details(self) -> Vec<TransactionDetails> {
-        self.0.into_iter().map(|x| x.inner).collect()
+}
+
+impl DerefMut for Transactions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 
@@ -112,65 +65,56 @@ impl IntoIterator for Transactions {
     }
 }
 
-impl Client {
+impl Degiro {
     pub async fn transactions(
         &self,
         from_date: impl Into<NaiveDate> + Send,
         to_date: impl Into<NaiveDate> + Send,
     ) -> Result<Transactions, ClientError> {
-        if self.inner.lock().unwrap().status != ClientStatus::Authorized {
-            return Err(ClientError::Unauthorized);
-        }
-        let req = {
-            let inner = self.inner.lock().unwrap();
-            let base_url = &inner.account_config.reporting_url;
-            let path_url = "v4/transactions";
-            let url = Url::parse(base_url).unwrap().join(path_url).unwrap();
+        self.ensure_authorized().await?;
 
-            inner
-                .http_client
-                .get(url)
-                .query(&[
-                    ("sessionId", &inner.session_id),
-                    ("intAccount", &format!("{}", inner.int_account)),
-                    ("fromDate", &from_date.into().format("%d/%m/%Y").to_string()),
-                    ("toDate", &to_date.into().format("%d/%m/%Y").to_string()),
-                    ("groupTransactionsByOrder", &"1".to_string()),
-                ])
-                .header(header::REFERER, &inner.referer)
-        };
-        let rate_limiter = {
-            let inner = self.inner.lock().unwrap();
-            inner.rate_limiter.clone()
-        };
-        rate_limiter.acquire_one().await;
+        let url = Url::parse(REPORTING_URL)
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
+            .join(crate::paths::TRANSACTIONS_PATH)
+            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
+
+        let req = self
+            .http_client
+            .get(url)
+            .query(&[
+                ("sessionId", self.session_id()),
+                ("intAccount", self.int_account().to_string()),
+                ("fromDate", from_date.into().format("%d/%m/%Y").to_string()),
+                ("toDate", to_date.into().format("%d/%m/%Y").to_string()),
+                ("groupTransactionsByOrder", "1".to_string()),
+            ])
+            .header(header::REFERER, crate::paths::REFERER);
+
+        self.acquire_limit().await;
 
         let res = req.send().await?;
 
-        match res.error_for_status() {
-            Ok(res) => {
-                let mut m = res
-                    .json::<HashMap<String, Vec<TransactionDetails>>>()
-                    .await
-                    .unwrap();
-                let data = m.remove("data").unwrap();
-                let xs: Vec<_> = {
-                    data.into_iter()
-                        .map(|x| Transaction::new(x, self.clone()))
-                        .collect()
-                };
-                Ok(Transactions::new(xs))
+        if let Err(err) = res.error_for_status_ref() {
+            let Some(status) = err.status() else {
+                return Err(ClientError::UnexpectedError(err.to_string()));
+            };
+
+            if status.as_u16() == 401 {
+                self.set_auth_state(ClientStatus::Unauthorized);
+                return Err(ClientError::Unauthorized);
             }
-            Err(err) => match err.status().unwrap().as_u16() {
-                401 => {
-                    self.inner.lock().unwrap().status = ClientStatus::Unauthorized;
-                    Err(ClientError::Unauthorized)
-                }
-                _ => Err(ClientError::UnexpectedError {
-                    source: Box::new(err),
-                }),
-            },
+
+            let error_response = res.json::<ApiErrorResponse>().await?;
+            return Err(ClientError::ApiError(error_response));
         }
+
+        let mut response_data = res.json::<HashMap<String, Vec<Transaction>>>().await?;
+
+        let transactions = response_data
+            .remove("data")
+            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))?;
+
+        Ok(Transactions(transactions))
     }
 }
 
@@ -178,11 +122,11 @@ impl Client {
 mod test {
     use chrono::NaiveDate;
 
-    use crate::client::Client;
+    use crate::client::Degiro;
 
     #[tokio::test]
     async fn transactions() {
-        let client = Client::new_from_env();
+        let client = Degiro::new_from_env();
         client.login().await.unwrap();
         client.account_config().await.unwrap();
 
