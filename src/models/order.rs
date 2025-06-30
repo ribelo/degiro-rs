@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt, ops::Deref};
+use std::{collections::HashSet, fmt};
 
 use chrono::{DateTime, Utc};
 use derivative::Derivative;
@@ -133,7 +133,7 @@ pub struct OrderTimeTypes(HashSet<OrderTimeType>);
 impl fmt::Display for OrderTimeTypes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for x in &self.0 {
-            write!(f, "{}, ", x)?;
+            write!(f, "{x}, ")?;
         }
         Ok(())
     }
@@ -179,7 +179,7 @@ pub struct AllowedOrderTypes(HashSet<OrderType>);
 impl fmt::Display for AllowedOrderTypes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for x in &self.0 {
-            write!(f, "{}, ", x)?;
+            write!(f, "{x}, ")?;
         }
         Ok(())
     }

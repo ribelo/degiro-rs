@@ -1,4 +1,4 @@
-use chrono::{Duration, NaiveDateTime};
+use chrono::Duration;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
@@ -32,6 +32,7 @@ pub enum Period {
 }
 
 impl Period {
+    /// Convert period to milliseconds
     pub fn to_ms(&self) -> u64 {
         match &self {
             Self::PT1S => 1000,
@@ -46,6 +47,114 @@ impl Period {
             Self::P3Y => 1000 * 60 * 60 * 24 * 365 * 3,
             Self::P5Y => 1000 * 60 * 60 * 24 * 365 * 5,
             Self::P50Y => 1000 * 60 * 60 * 24 * 365 * 50,
+        }
+    }
+
+    /// Add this period to a DateTime<Utc>
+    pub fn add_to_datetime(&self, datetime: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+        match self {
+            Period::PT1S => datetime + chrono::Duration::seconds(1),
+            Period::PT1M => datetime + chrono::Duration::minutes(1),
+            Period::PT1H => datetime + chrono::Duration::hours(1),
+            Period::P1D => datetime + chrono::Duration::days(1),
+            Period::P1W => datetime + chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(datetime, 1),
+            Period::P3M => chronoutil::delta::shift_months(datetime, 3),
+            Period::P6M => chronoutil::delta::shift_months(datetime, 6),
+            Period::P1Y => chronoutil::delta::shift_years(datetime, 1),
+            Period::P3Y => chronoutil::delta::shift_years(datetime, 3),
+            Period::P5Y => chronoutil::delta::shift_years(datetime, 5),
+            Period::P50Y => chronoutil::delta::shift_years(datetime, 50),
+        }
+    }
+
+    /// Subtract this period from a DateTime<Utc>
+    pub fn subtract_from_datetime(&self, datetime: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+        match self {
+            Period::PT1S => datetime - chrono::Duration::seconds(1),
+            Period::PT1M => datetime - chrono::Duration::minutes(1),
+            Period::PT1H => datetime - chrono::Duration::hours(1),
+            Period::P1D => datetime - chrono::Duration::days(1),
+            Period::P1W => datetime - chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(datetime, -1),
+            Period::P3M => chronoutil::delta::shift_months(datetime, -3),
+            Period::P6M => chronoutil::delta::shift_months(datetime, -6),
+            Period::P1Y => chronoutil::delta::shift_years(datetime, -1),
+            Period::P3Y => chronoutil::delta::shift_years(datetime, -3),
+            Period::P5Y => chronoutil::delta::shift_years(datetime, -5),
+            Period::P50Y => chronoutil::delta::shift_years(datetime, -50),
+        }
+    }
+
+    /// Add this period to a NaiveDate
+    pub fn add_to_date(&self, date: chrono::NaiveDate) -> chrono::NaiveDate {
+        match self {
+            Period::PT1S => date + chrono::Duration::seconds(1),
+            Period::PT1M => date + chrono::Duration::minutes(1),
+            Period::PT1H => date + chrono::Duration::hours(1),
+            Period::P1D => date + chrono::Duration::days(1),
+            Period::P1W => date + chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(date, 1),
+            Period::P3M => chronoutil::delta::shift_months(date, 3),
+            Period::P6M => chronoutil::delta::shift_months(date, 6),
+            Period::P1Y => chronoutil::delta::shift_years(date, 1),
+            Period::P3Y => chronoutil::delta::shift_years(date, 3),
+            Period::P5Y => chronoutil::delta::shift_years(date, 5),
+            Period::P50Y => chronoutil::delta::shift_years(date, 50),
+        }
+    }
+
+    /// Subtract this period from a NaiveDate
+    pub fn subtract_from_date(&self, date: chrono::NaiveDate) -> chrono::NaiveDate {
+        match self {
+            Period::PT1S => date - chrono::Duration::seconds(1),
+            Period::PT1M => date - chrono::Duration::minutes(1),
+            Period::PT1H => date - chrono::Duration::hours(1),
+            Period::P1D => date - chrono::Duration::days(1),
+            Period::P1W => date - chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(date, -1),
+            Period::P3M => chronoutil::delta::shift_months(date, -3),
+            Period::P6M => chronoutil::delta::shift_months(date, -6),
+            Period::P1Y => chronoutil::delta::shift_years(date, -1),
+            Period::P3Y => chronoutil::delta::shift_years(date, -3),
+            Period::P5Y => chronoutil::delta::shift_years(date, -5),
+            Period::P50Y => chronoutil::delta::shift_years(date, -50),
+        }
+    }
+
+    /// Add this period to a NaiveDateTime
+    pub fn add_to_datetime_naive(&self, datetime: chrono::NaiveDateTime) -> chrono::NaiveDateTime {
+        match self {
+            Period::PT1S => datetime + chrono::Duration::seconds(1),
+            Period::PT1M => datetime + chrono::Duration::minutes(1),
+            Period::PT1H => datetime + chrono::Duration::hours(1),
+            Period::P1D => datetime + chrono::Duration::days(1),
+            Period::P1W => datetime + chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(datetime, 1),
+            Period::P3M => chronoutil::delta::shift_months(datetime, 3),
+            Period::P6M => chronoutil::delta::shift_months(datetime, 6),
+            Period::P1Y => chronoutil::delta::shift_years(datetime, 1),
+            Period::P3Y => chronoutil::delta::shift_years(datetime, 3),
+            Period::P5Y => chronoutil::delta::shift_years(datetime, 5),
+            Period::P50Y => chronoutil::delta::shift_years(datetime, 50),
+        }
+    }
+
+    /// Subtract this period from a NaiveDateTime
+    pub fn subtract_from_datetime_naive(&self, datetime: chrono::NaiveDateTime) -> chrono::NaiveDateTime {
+        match self {
+            Period::PT1S => datetime - chrono::Duration::seconds(1),
+            Period::PT1M => datetime - chrono::Duration::minutes(1),
+            Period::PT1H => datetime - chrono::Duration::hours(1),
+            Period::P1D => datetime - chrono::Duration::days(1),
+            Period::P1W => datetime - chrono::Duration::weeks(1),
+            Period::P1M => chronoutil::delta::shift_months(datetime, -1),
+            Period::P3M => chronoutil::delta::shift_months(datetime, -3),
+            Period::P6M => chronoutil::delta::shift_months(datetime, -6),
+            Period::P1Y => chronoutil::delta::shift_years(datetime, -1),
+            Period::P3Y => chronoutil::delta::shift_years(datetime, -3),
+            Period::P5Y => chronoutil::delta::shift_years(datetime, -5),
+            Period::P50Y => chronoutil::delta::shift_years(datetime, -50),
         }
     }
 }
@@ -69,245 +178,11 @@ impl From<Period> for Duration {
     }
 }
 
-impl std::ops::Add<Period> for chrono::DateTime<chrono::Utc> {
-    type Output = chrono::DateTime<chrono::Utc>;
-
-    fn add(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self + chrono::Duration::seconds(1),
-            Period::PT1M => self + chrono::Duration::minutes(1),
-            Period::PT1H => self + chrono::Duration::hours(1),
-            Period::P1D => self + chrono::Duration::days(1),
-            Period::P1W => self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, 1),
-            Period::P3M => chronoutil::delta::shift_months(self, 3),
-            Period::P6M => chronoutil::delta::shift_months(self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(self, 50),
-        }
-    }
-}
-
-impl std::ops::Add<Period> for chrono::NaiveDate {
-    type Output = chrono::NaiveDate;
-
-    fn add(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self + chrono::Duration::seconds(1),
-            Period::PT1M => self + chrono::Duration::minutes(1),
-            Period::PT1H => self + chrono::Duration::hours(1),
-            Period::P1D => self + chrono::Duration::days(1),
-            Period::P1W => self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, 1),
-            Period::P3M => chronoutil::delta::shift_months(self, 3),
-            Period::P6M => chronoutil::delta::shift_months(self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(self, 50),
-        }
-    }
-}
-
-impl std::ops::Sub<Period> for chrono::DateTime<chrono::Utc> {
-    type Output = chrono::DateTime<chrono::Utc>;
-
-    fn sub(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self - chrono::Duration::seconds(1),
-            Period::PT1M => self - chrono::Duration::minutes(1),
-            Period::PT1H => self - chrono::Duration::hours(1),
-            Period::P1D => self - chrono::Duration::days(1),
-            Period::P1W => self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, -1),
-            Period::P3M => chronoutil::delta::shift_months(self, -3),
-            Period::P6M => chronoutil::delta::shift_months(self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(self, -50),
-        }
-    }
-}
-
-impl std::ops::Sub<Period> for chrono::NaiveDate {
-    type Output = chrono::NaiveDate;
-
-    fn sub(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self - chrono::Duration::seconds(1),
-            Period::PT1M => self - chrono::Duration::minutes(1),
-            Period::PT1H => self - chrono::Duration::hours(1),
-            Period::P1D => self - chrono::Duration::days(1),
-            Period::P1W => self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, -1),
-            Period::P3M => chronoutil::delta::shift_months(self, -3),
-            Period::P6M => chronoutil::delta::shift_months(self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(self, -50),
-        }
-    }
-}
-
-impl std::ops::AddAssign<Period> for chrono::DateTime<chrono::Utc> {
-    fn add_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self + chrono::Duration::seconds(1),
-            Period::PT1M => *self + chrono::Duration::minutes(1),
-            Period::PT1H => *self + chrono::Duration::hours(1),
-            Period::P1D => *self + chrono::Duration::days(1),
-            Period::P1W => *self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, 1),
-            Period::P3M => chronoutil::delta::shift_months(*self, 3),
-            Period::P6M => chronoutil::delta::shift_months(*self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, 50),
-        };
-    }
-}
-
-impl std::ops::SubAssign<Period> for chrono::DateTime<chrono::Utc> {
-    fn sub_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self - chrono::Duration::seconds(1),
-            Period::PT1M => *self - chrono::Duration::minutes(1),
-            Period::PT1H => *self - chrono::Duration::hours(1),
-            Period::P1D => *self - chrono::Duration::days(1),
-            Period::P1W => *self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, -1),
-            Period::P3M => chronoutil::delta::shift_months(*self, -3),
-            Period::P6M => chronoutil::delta::shift_months(*self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, -50),
-        };
-    }
-}
-
-impl std::ops::Add<Period> for chrono::NaiveDateTime {
-    type Output = chrono::NaiveDateTime;
-
-    fn add(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self + chrono::Duration::seconds(1),
-            Period::PT1M => self + chrono::Duration::minutes(1),
-            Period::PT1H => self + chrono::Duration::hours(1),
-            Period::P1D => self + chrono::Duration::days(1),
-            Period::P1W => self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, 1),
-            Period::P3M => chronoutil::delta::shift_months(self, 3),
-            Period::P6M => chronoutil::delta::shift_months(self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(self, 50),
-        }
-    }
-}
-
-impl std::ops::AddAssign<Period> for chrono::NaiveDateTime {
-    fn add_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self + chrono::Duration::seconds(1),
-            Period::PT1M => *self + chrono::Duration::minutes(1),
-            Period::PT1H => *self + chrono::Duration::hours(1),
-            Period::P1D => *self + chrono::Duration::days(1),
-            Period::P1W => *self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, 1),
-            Period::P3M => chronoutil::delta::shift_months(*self, 3),
-            Period::P6M => chronoutil::delta::shift_months(*self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, 50),
-        };
-    }
-}
-
-impl std::ops::Sub<Period> for chrono::NaiveDateTime {
-    type Output = chrono::NaiveDateTime;
-
-    fn sub(self, rhs: Period) -> Self::Output {
-        match rhs {
-            Period::PT1S => self - chrono::Duration::seconds(1),
-            Period::PT1M => self - chrono::Duration::minutes(1),
-            Period::PT1H => self - chrono::Duration::hours(1),
-            Period::P1D => self - chrono::Duration::days(1),
-            Period::P1W => self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(self, -1),
-            Period::P3M => chronoutil::delta::shift_months(self, -3),
-            Period::P6M => chronoutil::delta::shift_months(self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(self, -50),
-        }
-    }
-}
-
-impl std::ops::SubAssign<Period> for chrono::NaiveDateTime {
-    fn sub_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self - chrono::Duration::seconds(1),
-            Period::PT1M => *self - chrono::Duration::minutes(1),
-            Period::PT1H => *self - chrono::Duration::hours(1),
-            Period::P1D => *self - chrono::Duration::days(1),
-            Period::P1W => *self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, -1),
-            Period::P3M => chronoutil::delta::shift_months(*self, -3),
-            Period::P6M => chronoutil::delta::shift_months(*self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, -50),
-        };
-    }
-}
-
-impl std::ops::AddAssign<Period> for chrono::NaiveDate {
-    fn add_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self + chrono::Duration::seconds(1),
-            Period::PT1M => *self + chrono::Duration::minutes(1),
-            Period::PT1H => *self + chrono::Duration::hours(1),
-            Period::P1D => *self + chrono::Duration::days(1),
-            Period::P1W => *self + chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, 1),
-            Period::P3M => chronoutil::delta::shift_months(*self, 3),
-            Period::P6M => chronoutil::delta::shift_months(*self, 6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, 1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, 3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, 5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, 50),
-        };
-    }
-}
-
-impl std::ops::SubAssign<Period> for chrono::NaiveDate {
-    fn sub_assign(&mut self, rhs: Period) {
-        *self = match rhs {
-            Period::PT1S => *self - chrono::Duration::seconds(1),
-            Period::PT1M => *self - chrono::Duration::minutes(1),
-            Period::PT1H => *self - chrono::Duration::hours(1),
-            Period::P1D => *self - chrono::Duration::days(1),
-            Period::P1W => *self - chrono::Duration::weeks(1),
-            Period::P1M => chronoutil::delta::shift_months(*self, -1),
-            Period::P3M => chronoutil::delta::shift_months(*self, -3),
-            Period::P6M => chronoutil::delta::shift_months(*self, -6),
-            Period::P1Y => chronoutil::delta::shift_years(*self, -1),
-            Period::P3Y => chronoutil::delta::shift_years(*self, -3),
-            Period::P5Y => chronoutil::delta::shift_years(*self, -5),
-            Period::P50Y => chronoutil::delta::shift_years(*self, -50),
-        };
-    }
-}
+// Operator overloading implementations removed for simplicity and clarity.
+// Use the explicit methods above instead:
+// - date - period  =>  period.subtract_from_date(date)
+// - datetime + period  =>  period.add_to_datetime(datetime)
+// - etc.
 
 #[cfg(test)]
 mod tests {
@@ -317,31 +192,29 @@ mod tests {
     #[test]
     fn test_add_period_to_datetime() {
         let now = Utc::now();
-        let one_day_later = now + Period::P1D;
+        let one_day_later = Period::P1D.add_to_datetime(now);
         assert_eq!(one_day_later, now + chrono::Duration::days(1));
     }
 
     #[test]
     fn test_sub_period_from_datetime() {
         let now = Utc::now();
-        let one_hour_earlier = now - Period::PT1H;
+        let one_hour_earlier = Period::PT1H.subtract_from_datetime(now);
         assert_eq!(one_hour_earlier, now - chrono::Duration::hours(1));
     }
 
     #[test]
-    fn test_add_assign_period_to_datetime() {
-        let mut now = Utc::now();
-        let expected = now + Period::P1W;
-        now += Period::P1W;
-        assert_eq!(now, expected);
+    fn test_add_period_to_date() {
+        let today = chrono::Utc::now().date_naive();
+        let one_week_later = Period::P1W.add_to_date(today);
+        assert_eq!(one_week_later, today + chrono::Duration::weeks(1));
     }
 
     #[test]
-    fn test_sub_assign_period_from_datetime() {
-        let mut now = Utc::now();
-        let expected = now - Period::P1M;
-        now -= Period::P1M;
-        assert_eq!(now, expected);
+    fn test_sub_period_from_date() {
+        let today = chrono::Utc::now().date_naive();
+        let one_month_earlier = Period::P1M.subtract_from_date(today);
+        assert_eq!(one_month_earlier, chronoutil::delta::shift_months(today, -1));
     }
 
     #[test]

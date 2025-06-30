@@ -1,8 +1,8 @@
-use std::{collections::HashMap, ops::Deref, str::FromStr};
+use std::{collections::HashMap, str::FromStr};
 
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
 use super::Currency;
 
@@ -98,7 +98,7 @@ pub struct FlatexBankAccount {
     pub iban: String,
 }
 
-#[derive(Clone, Default, Debug, Deserialize)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountConfig {
     pub allocations_url: String,
@@ -241,12 +241,46 @@ impl From<String> for CashMovementType {
 }
 
 #[derive(Debug)]
-pub struct AccountState(pub Vec<CashMovement>);
+pub struct AccountState(Vec<CashMovement>);
 
-impl Deref for AccountState {
-    type Target = Vec<CashMovement>;
+impl AccountState {
+    /// Create a new AccountState
+    pub fn new(movements: Vec<CashMovement>) -> Self {
+        Self(movements)
+    }
 
-    fn deref(&self) -> &Self::Target {
+    /// Get a reference to the cash movements
+    pub fn movements(&self) -> &[CashMovement] {
         &self.0
+    }
+
+    /// Get a mutable reference to the cash movements
+    pub fn movements_mut(&mut self) -> &mut Vec<CashMovement> {
+        &mut self.0
+    }
+
+    /// Get the number of movements
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Check if there are no movements
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Add a movement to the account state
+    pub fn push(&mut self, movement: CashMovement) {
+        self.0.push(movement);
+    }
+
+    /// Iterate over the movements
+    pub fn iter(&self) -> std::slice::Iter<'_, CashMovement> {
+        self.0.iter()
+    }
+
+    /// Convert into the underlying Vec
+    pub fn into_vec(self) -> Vec<CashMovement> {
+        self.0
     }
 }

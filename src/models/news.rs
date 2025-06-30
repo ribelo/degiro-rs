@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum Source {
     RefinitivLatestNews,
     RefinitivTopNews,
-    Unknown(String),
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -26,83 +27,5 @@ pub struct News {
     pub html_content: bool,
 }
 
-impl From<&serde_json::Value> for News {
-    fn from(value: &serde_json::Value) -> Self {
-        // Get source field first to avoid later lookups
-        let source = if let Some(src) = value.get("source").and_then(|v| v.as_str()) {
-            match src {
-                "REFINITIV_LATEST_NEWS" => Source::RefinitivLatestNews,
-                "REFINITIV_TOP_NEWS" => Source::RefinitivTopNews,
-                other => Source::Unknown(other.to_owned()),
-            }
-        } else {
-            Source::Unknown(String::new())
-        };
-
-        // Use get() instead of [] to avoid potential panics
-        let isins = value
-            .get("isins")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                // Pre-allocate vector capacity
-                let mut vec = Vec::with_capacity(arr.len());
-                for isin in arr {
-                    if let Some(s) = isin.as_str() {
-                        vec.push(s.to_owned());
-                    }
-                }
-                vec
-            })
-            .unwrap_or_default();
-
-        Self {
-            id: value
-                .get("id")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-                .unwrap_or_default(),
-            date: value
-                .get("date")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse().ok())
-                .unwrap_or_else(Utc::now),
-            last_updated: value
-                .get("lastUpdated")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse().ok()),
-            title: value
-                .get("title")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-                .unwrap_or_default(),
-            brief: value
-                .get("brief")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            content: value
-                .get("content")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-                .unwrap_or_default(),
-            source,
-            language: value
-                .get("language")
-                .and_then(|v| v.as_str())
-                .map(String::from)
-                .unwrap_or_default(),
-            category: value
-                .get("category")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            isins,
-            provider: value
-                .get("provider")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            html_content: value
-                .get("htmlContent")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false),
-        }
-    }
-}
+// Manual From<&serde_json::Value> implementation removed in favor of serde's automatic derivation.
+// This eliminates ~80 lines of manual parsing code and relies on serde's robust error handling.

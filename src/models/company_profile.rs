@@ -36,13 +36,13 @@ impl fmt::Display for CompanyProfile {
 
         writeln!(f, "\nManagement:")?;
         for mgmt in &self.management {
-            writeln!(f, "{}", mgmt)?;
+            writeln!(f, "{mgmt}")?;
             writeln!(f)?;
         }
 
         writeln!(f, "\nIssues:")?;
         for issue in &self.issues {
-            writeln!(f, "{}", issue)?;
+            writeln!(f, "{issue}")?;
             writeln!(f)?;
         }
 
@@ -111,31 +111,31 @@ impl fmt::Display for Contacts {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Name: {}", self.name)?;
         if let Some(address) = &self.address {
-            writeln!(f, "Address: {}", address)?;
+            writeln!(f, "Address: {address}")?;
         }
         if let Some(postcode) = &self.postcode {
-            writeln!(f, "Postcode: {}", postcode)?;
+            writeln!(f, "Postcode: {postcode}")?;
         }
         if let Some(city) = &self.city {
-            writeln!(f, "City: {}", city)?;
+            writeln!(f, "City: {city}")?;
         }
         if let Some(country) = &self.country {
-            writeln!(f, "Country: {}", country)?;
+            writeln!(f, "Country: {country}")?;
         }
         if let Some(telephone) = &self.telephone {
-            writeln!(f, "Telephone: {}", telephone)?;
+            writeln!(f, "Telephone: {telephone}")?;
         };
         if let Some(fax) = &self.fax {
-            writeln!(f, "Fax: {}", fax)?;
+            writeln!(f, "Fax: {fax}")?;
         };
         if let Some(email) = &self.email {
-            writeln!(f, "Email: {}", email)?;
+            writeln!(f, "Email: {email}")?;
         };
         if let Some(website) = &self.website {
-            writeln!(f, "Website: {}", website)?;
+            writeln!(f, "Website: {website}")?;
         };
         if let Some(stateregion) = &self.stateregion {
-            write!(f, "State/Region: {}", stateregion)?;
+            write!(f, "State/Region: {stateregion}")?;
         };
         Ok(())
     }
@@ -158,13 +158,13 @@ impl fmt::Display for Management {
         writeln!(f, "Function: {}", self.function)?;
         writeln!(f, "Long Function: {}", self.long_function)?;
         if let Some(age) = &self.age {
-            writeln!(f, "Age: {}", age)?;
+            writeln!(f, "Age: {age}")?;
         }
         if let Some(since) = &self.since {
-            writeln!(f, "Since: {}", since)?;
+            writeln!(f, "Since: {since}")?;
         }
         if let Some(title_start) = &self.title_start {
-            writeln!(f, "Title Start: {}", title_start)?;
+            writeln!(f, "Title Start: {title_start}")?;
         }
         Ok(())
     }
@@ -186,22 +186,22 @@ impl fmt::Display for Issue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "ID: {}", self.id)?;
         if let Some(name) = &self.name {
-            writeln!(f, "Name: {}", name)?;
+            writeln!(f, "Name: {name}")?;
         }
         if let Some(ticker) = &self.ticker {
-            writeln!(f, "Ticker: {}", ticker)?;
+            writeln!(f, "Ticker: {ticker}")?;
         }
         if let Some(exchange) = &self.exchange {
-            writeln!(f, "Exchange: {}", exchange)?;
+            writeln!(f, "Exchange: {exchange}")?;
         }
         if let Some(description) = &self.description {
-            writeln!(f, "Description: {}", description)?;
+            writeln!(f, "Description: {description}")?;
         }
         if let Some(most_recent_split_value) = &self.most_recent_split_value {
-            writeln!(f, "Most Recent Split Value: {}", most_recent_split_value)?;
+            writeln!(f, "Most Recent Split Value: {most_recent_split_value}")?;
         }
         if let Some(most_recent_split_date) = &self.most_recent_split_date {
-            writeln!(f, "Most Recent Split Date: {}", most_recent_split_date)?;
+            writeln!(f, "Most Recent Split Date: {most_recent_split_date}")?;
         }
         Ok(())
     }

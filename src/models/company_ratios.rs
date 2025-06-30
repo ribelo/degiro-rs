@@ -9,54 +9,8 @@ use serde_json::Value;
 #[serde(rename_all = "camelCase")]
 pub struct CompanyRatios {
     pub isin: String,
-    // pub cons_recommendation_trend: ConsRecommendationTrend,
     pub current_ratios: CurrentRatios,
-    // pub forecast_data: ForecastData,
-    // pub la_annual: String,
-    // pub la_interim: String,
-    // pub last_available: String,
-    // pub last_modified: String,
-    // pub last_retrieved: String,
-    // pub shares_out: String,
-    // pub total_float: String,
 }
-
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct ConsRecommendationTrend {
-//     pub analysts: Vec<Analyst>,
-//     pub opinions: Vec<Opinion>,
-//     pub ratings: Vec<Rating>,
-// }
-
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct Analyst {
-//     pub period_type: String,
-//     pub value: i64,
-// }
-
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct Opinion {
-//     pub opinion_code: i64,
-//     pub opinion_description: String,
-//     pub periods: Vec<Period>,
-// }
-//
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct Period {
-//     pub period_type: String,
-//     pub value: i64,
-// }
-//
-// #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// pub struct Rating {
-//     pub period_type: String,
-//     pub value: f64,
-// }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

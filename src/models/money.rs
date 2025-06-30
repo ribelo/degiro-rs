@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::collections::HashMap;
 
 use rust_decimal::Decimal;
 
@@ -15,6 +15,8 @@ use thiserror::Error;
     Copy,
     Eq,
     PartialEq,
+    Ord,
+    PartialOrd,
     EnumString,
     Hash,
     strum::Display,
@@ -57,6 +59,33 @@ impl Money {
         Self {
             amount: self.amount.abs(),
             currency: self.currency,
+        }
+    }
+
+    pub fn convert_to(&self, to: Currency, client: &crate::client::Degiro) -> Result<Money, crate::error::ClientError> {
+        if self.currency == to {
+            return Ok(*self);
+        }
+        
+        let rate = client.get_rate(self.currency, to)?;
+        Ok(Money::new(to, self.amount * rate))
+    }
+
+    pub fn try_add(&self, other: Self, client: &crate::client::Degiro) -> Result<Money, crate::error::ClientError> {
+        if self.currency == other.currency {
+            Ok(Money::new(self.currency, self.amount + other.amount))
+        } else {
+            let converted_other = other.convert_to(self.currency, client)?;
+            Ok(Money::new(self.currency, self.amount + converted_other.amount))
+        }
+    }
+
+    pub fn try_sub(&self, other: Self, client: &crate::client::Degiro) -> Result<Money, crate::error::ClientError> {
+        if self.currency == other.currency {
+            Ok(Money::new(self.currency, self.amount - other.amount))
+        } else {
+            let converted_other = other.convert_to(self.currency, client)?;
+            Ok(Money::new(self.currency, self.amount - converted_other.amount))
         }
     }
 }
@@ -206,23 +235,28 @@ impl std::ops::DivAssign<Decimal> for Money {
 
 impl std::iter::Sum for Money {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.reduce(|a, b| (a + b).unwrap()).unwrap_or_default()
+        iter.reduce(|a, b| (a + b).unwrap_or_else(|_| Money::default())).unwrap_or_default()
     }
 }
 
 impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.currency == other.currency {
-            self.amount.partial_cmp(&other.amount)
-        } else {
-            None
-        }
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for Money {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap()
+        if self.currency == other.currency {
+            self.amount.cmp(&other.amount)
+        } else {
+            // When currencies differ, we need a consistent ordering
+            // Compare by currency code first, then amount
+            match self.currency.cmp(&other.currency) {
+                std::cmp::Ordering::Equal => self.amount.cmp(&other.amount),
+                other => other,
+            }
+        }
     }
 }
 
@@ -255,6 +289,26 @@ impl From<(Currency, Decimal)> for Money {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
+    use std::collections::HashMap;
+
+    fn create_test_client_with_rates() -> crate::client::Degiro {
+        use crate::client::Degiro;
+        
+        let client = Degiro::builder()
+            .username("test".to_string())
+            .password("test".to_string())
+            .totp_secret("test".to_string())
+            .build();
+
+        // Set up test exchange rates
+        let mut rates = HashMap::new();
+        rates.insert("EUR/USD".to_string(), dec!(1.10)); // 1 EUR = 1.10 USD
+        rates.insert("USD/GBP".to_string(), dec!(0.75)); // 1 USD = 0.75 GBP
+        rates.insert("EUR/GBP".to_string(), dec!(0.825)); // 1 EUR = 0.825 GBP
+        
+        client.session.set_currency_rates(rates);
+        client
+    }
 
     #[test]
     fn test_money_creation() {
@@ -269,7 +323,7 @@ mod tests {
         let m2 = Money::new(Currency::EUR, dec!(20));
         let m3 = Money::new(Currency::USD, dec!(20));
 
-        assert_eq!((m1 + m2).unwrap(), Money::new(Currency::EUR, dec!(30)));
+        assert_eq!((m1 + m2).expect("Failed to add money with same currency"), Money::new(Currency::EUR, dec!(30)));
         assert!(matches!(m1 + m3, Err(MoneyError::Add(_, _))));
     }
 
@@ -296,10 +350,10 @@ mod tests {
         let mut map = HashMap::new();
         map.insert("EUR".to_string(), dec!(10));
 
-        let money = Money::try_from(map).unwrap();
+        let money = Money::try_from(map).expect("Failed to create Money from HashMap");
         assert_eq!(money, Money::new(Currency::EUR, dec!(10)));
 
-        let money = Money::try_from(("EUR".to_string(), dec!(10))).unwrap();
+        let money = Money::try_from(("EUR".to_string(), dec!(10))).expect("Failed to create Money from tuple");
         assert_eq!(money, Money::new(Currency::EUR, dec!(10)));
 
         let money = Money::from((Currency::EUR, dec!(10)));
@@ -310,5 +364,85 @@ mod tests {
     fn test_money_display() {
         let money = Money::new(Currency::EUR, dec!(10.5));
         assert_eq!(money.to_string(), "10.50 EUR");
+    }
+
+    #[test]
+    fn test_currency_conversion_same_currency() {
+        let client = create_test_client_with_rates();
+        let eur_money = Money::new(Currency::EUR, dec!(100));
+        
+        let result = eur_money.convert_to(Currency::EUR, &client).expect("Failed to convert to same currency");
+        assert_eq!(result, eur_money);
+    }
+
+    #[test]
+    fn test_currency_conversion_direct_rate() {
+        let client = create_test_client_with_rates();
+        let eur_money = Money::new(Currency::EUR, dec!(100));
+        
+        let usd_result = eur_money.convert_to(Currency::USD, &client).expect("Failed to convert EUR to USD");
+        assert_eq!(usd_result, Money::new(Currency::USD, dec!(110))); // 100 * 1.10
+    }
+
+    #[test]
+    fn test_currency_conversion_inverse_rate() {
+        let client = create_test_client_with_rates();
+        let usd_money = Money::new(Currency::USD, dec!(110));
+        
+        // USD/EUR rate is inverse of EUR/USD (1/1.10 ≈ 0.909090909...)
+        let eur_result = usd_money.convert_to(Currency::EUR, &client).expect("Failed to convert USD to EUR");
+        assert_eq!(eur_result.currency(), Currency::EUR);
+        assert!((eur_result.amount() - dec!(100)).abs() < dec!(0.01)); // Should be approximately 100
+    }
+
+    #[test]
+    fn test_currency_conversion_missing_rate() {
+        let client = create_test_client_with_rates();
+        let chf_money = Money::new(Currency::CHF, dec!(100));
+        
+        let result = chf_money.convert_to(Currency::JPY, &client);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_try_add_same_currency() {
+        let client = create_test_client_with_rates();
+        let m1 = Money::new(Currency::EUR, dec!(100));
+        let m2 = Money::new(Currency::EUR, dec!(50));
+        
+        let result = m1.try_add(m2, &client).expect("Failed to add money with same currency");
+        assert_eq!(result, Money::new(Currency::EUR, dec!(150)));
+    }
+
+    #[test]
+    fn test_try_add_different_currencies() {
+        let client = create_test_client_with_rates();
+        let eur_money = Money::new(Currency::EUR, dec!(100));
+        let usd_money = Money::new(Currency::USD, dec!(110)); // Should convert to 100 EUR
+        
+        let result = eur_money.try_add(usd_money, &client).expect("Failed to add money with different currencies");
+        assert_eq!(result.currency(), Currency::EUR);
+        assert!((result.amount() - dec!(200)).abs() < dec!(0.01)); // Should be approximately 200 EUR
+    }
+
+    #[test]
+    fn test_try_sub_same_currency() {
+        let client = create_test_client_with_rates();
+        let m1 = Money::new(Currency::EUR, dec!(100));
+        let m2 = Money::new(Currency::EUR, dec!(30));
+        
+        let result = m1.try_sub(m2, &client).expect("Failed to subtract money with same currency");
+        assert_eq!(result, Money::new(Currency::EUR, dec!(70)));
+    }
+
+    #[test]
+    fn test_try_sub_different_currencies() {
+        let client = create_test_client_with_rates();
+        let eur_money = Money::new(Currency::EUR, dec!(200));
+        let usd_money = Money::new(Currency::USD, dec!(110)); // Should convert to 100 EUR
+        
+        let result = eur_money.try_sub(usd_money, &client).expect("Failed to subtract money with different currencies");
+        assert_eq!(result.currency(), Currency::EUR);
+        assert!((result.amount() - dec!(100)).abs() < dec!(0.01)); // Should be approximately 100 EUR
     }
 }

@@ -1,35 +1,39 @@
 use chrono::NaiveDate;
-use reqwest::{header, Url};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use thiserror::Error;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ClientError, DataError, DateTimeError, ResponseError},
+    http::{HttpClient, HttpRequest},
     models::{BalanceSheetReport, CashFlowReport, FinancialReports, IncomeStatementReport, Report},
-    paths::{BASE_API_URL, FINANCIAL_STATEMENTS_PATH, REFERER},
+    paths::{BASE_API_URL, FINANCIAL_STATEMENTS_PATH},
 };
 
 fn process_reports(data: &serde_json::Value) -> Result<Vec<Report>, ClientError> {
     let reports = data
         .as_array()
-        .ok_or_else(|| ClientError::UnexpectedError("Can't get data".into()))?;
+        .ok_or_else(|| ResponseError::unexpected_structure("Financial data must be an array"))?;
 
     let mut results = Vec::with_capacity(reports.len());
 
     for report_data in reports {
         let fiscal_year = report_data["fiscalYear"]
             .as_i64()
-            .ok_or_else(|| ClientError::UnexpectedError("Can't get fiscalYear".into()))?
+            .ok_or_else(|| DataError::missing_field("fiscalYear"))?
             as i32;
 
         let end_date = NaiveDate::parse_from_str(
             report_data["endDate"]
                 .as_str()
-                .ok_or_else(|| ClientError::UnexpectedError("Can't get endDate".into()))?,
+                .ok_or_else(|| DataError::missing_field("endDate"))?,
             "%Y-%m-%d",
         )
-        .map_err(|err| ClientError::UnexpectedError(err.to_string()))?;
+        .map_err(|err| ClientError::from(DateTimeError::ParseError {
+            input: report_data["endDate"].as_str().unwrap_or("unknown").to_string(),
+            reason: err.to_string(),
+        }))?;
 
         let mut report = Report {
             fiscal_year,
@@ -39,28 +43,28 @@ fn process_reports(data: &serde_json::Value) -> Result<Vec<Report>, ClientError>
 
         let statements = report_data["statements"]
             .as_array()
-            .ok_or_else(|| ClientError::UnexpectedError("Can't get statements".into()))?;
+            .ok_or_else(|| DataError::missing_field("statements"))?;
 
         for statement in statements {
             let statement_type = statement["type"]
                 .as_str()
-                .ok_or_else(|| ClientError::UnexpectedError("Can't get statement type".into()))?;
+                .ok_or_else(|| DataError::missing_field("statement.type"))?;
 
             match statement_type {
                 "INC" => {
                     report.income_report = IncomeStatementReport {
                         source: statement["source"]
                             .as_str()
-                            .ok_or_else(|| ClientError::UnexpectedError("Can't get source".into()))?
+                            .ok_or_else(|| DataError::missing_field("source"))?
                             .to_string(),
                         period_type: statement["periodType"]
                             .as_str()
                             .ok_or_else(|| {
-                                ClientError::UnexpectedError("Can't get periodType".into())
+                                DataError::missing_field("periodType")
                             })?
                             .to_string(),
                         period_length: statement["periodLength"].as_i64().ok_or_else(|| {
-                            ClientError::UnexpectedError("Can't get periodLength".into())
+                            DataError::missing_field("periodLength")
                         })? as i32,
                         statement: Box::new((&statement["items"]).into()),
                     };
@@ -69,7 +73,7 @@ fn process_reports(data: &serde_json::Value) -> Result<Vec<Report>, ClientError>
                     report.balance_sheet = BalanceSheetReport {
                         source: statement["source"]
                             .as_str()
-                            .ok_or_else(|| ClientError::UnexpectedError("Can't get source".into()))?
+                            .ok_or_else(|| DataError::missing_field("source"))?
                             .to_string(),
                         statement: Box::new((&statement["items"]).into()),
                     };
@@ -78,25 +82,22 @@ fn process_reports(data: &serde_json::Value) -> Result<Vec<Report>, ClientError>
                     report.cash_flow = CashFlowReport {
                         source: statement["source"]
                             .as_str()
-                            .ok_or_else(|| ClientError::UnexpectedError("Can't get source".into()))?
+                            .ok_or_else(|| DataError::missing_field("source"))?
                             .to_string(),
                         period_type: statement["periodType"]
                             .as_str()
                             .ok_or_else(|| {
-                                ClientError::UnexpectedError("Can't get periodType".into())
+                                DataError::missing_field("periodType")
                             })?
                             .to_string(),
                         period_length: statement["periodLength"].as_i64().ok_or_else(|| {
-                            ClientError::UnexpectedError("Can't get periodLength".into())
+                            DataError::missing_field("periodLength")
                         })? as i32,
                         statement: Box::new((&statement["items"]).into()),
                     };
                 }
                 code => {
-                    return Err(ClientError::UnexpectedError(format!(
-                        "Unexpected statement type: {}",
-                        code
-                    )))
+                    return Err(ResponseError::unknown_value("statement type", code).into())
                 }
             }
         }
@@ -124,44 +125,14 @@ impl Degiro {
         &self,
         isin: impl AsRef<str>,
     ) -> Result<Option<FinancialReports>, ClientError> {
-        self.ensure_authorized().await?;
-
-        let url = Url::parse(BASE_API_URL)
-            .unwrap()
-            .join(FINANCIAL_STATEMENTS_PATH)
-            .unwrap()
-            .join(isin.as_ref())
-            .unwrap();
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[
-                ("intAccount", &self.int_account().to_string()),
-                ("sessionId", &self.session_id()),
-            ])
-            .header(header::REFERER, REFERER)
-            .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.to_string());
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let json = res.json::<serde_json::Value>().await?;
+        let url = format!("{}{}{}", BASE_API_URL, FINANCIAL_STATEMENTS_PATH, isin.as_ref());
+        
+        let json = self.request_json(
+            HttpRequest::get(url)
+                .query("intAccount", self.int_account().to_string())
+                .query("sessionId", self.session_id())
+                .header("Content-Type", "application/json")
+        ).await?;
         let data = match json.get("data") {
             Some(data) => data,
             None => return Ok(None),
@@ -174,7 +145,7 @@ impl Degiro {
         let currency = data
             .get("currency")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| ClientError::UnexpectedError("Can't get currency".into()))?
+            .ok_or_else(|| DataError::missing_field("currency"))?
             .to_string();
 
         let annual_reports = process_reports(&data["annual"])?;

@@ -1,11 +1,12 @@
 use futures_concurrency::prelude::*;
-use reqwest::{header, Url};
 use serde::Serialize;
 use std::fmt::Debug;
 
-use crate::client::{ApiErrorResponse, ClientError, ClientStatus, Degiro};
+use crate::client::Degiro;
+use crate::error::{ClientError, DataError};
+use crate::http::{HttpClient, HttpRequest};
 use crate::models::{Product, Products};
-use crate::paths::{PRODUCT_INFO_PATH, PRODUCT_SEARCH_URL, REFERER};
+use crate::paths::{PRODUCT_INFO_PATH, PRODUCT_SEARCH_URL};
 
 impl Degiro {
     pub async fn product(
@@ -15,59 +16,29 @@ impl Degiro {
         let id = id.into();
         self.products([id.as_str()])
             .await
-            .map(|products| products.0.into_iter().next())
+            .map(|products| products.into_vec().into_iter().next())
     }
 
     pub async fn products<T>(&self, ids: T) -> Result<Products, ClientError>
     where
         T: Debug + Serialize + Sized + Send + Sync,
     {
-        self.ensure_authorized().await?;
-
-        // Build URL
-        let url = Url::parse(PRODUCT_SEARCH_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join(PRODUCT_INFO_PATH)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        // Build request
-        let req = self
-            .http_client
-            .post(url)
-            .query(&[
-                ("intAccount", self.int_account().to_string()),
-                ("sessionId", self.session_id()),
-            ])
-            .json(&ids)
-            .header(header::REFERER, REFERER);
-
-        // Rate limit and send request
-        self.acquire_limit().await;
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let body = res.json::<serde_json::Value>().await?;
+        let url = format!("{PRODUCT_SEARCH_URL}{PRODUCT_INFO_PATH}");
+        
+        let body = self.request_json(
+            HttpRequest::post(url)
+                .query("intAccount", self.int_account().to_string())
+                .query("sessionId", self.session_id())
+                .json(&ids)?
+        ).await?;
 
         let mut products = body
             .get("data")
             .and_then(|v| v.as_object())
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".to_string()))?
+            .ok_or_else(|| DataError::missing_field("data"))?
             .iter()
-            .map(|(_, v)| serde_json::from_value::<Product>(v.clone()).unwrap())
-            .collect::<Vec<Product>>();
+            .map(|(_, v)| serde_json::from_value::<Product>(v.clone()))
+            .collect::<Result<Vec<Product>, _>>()?;
 
         let mut futures = Vec::with_capacity(products.len());
         for p in products.iter_mut() {
@@ -82,7 +53,7 @@ impl Degiro {
             }
         }
 
-        Ok(Products(products))
+        Ok(Products::new(products))
     }
 }
 
@@ -91,33 +62,21 @@ mod test {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_products_ids() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let products = client.products(["17461000"]).await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
+        let products = client.products(["17461000"]).await.expect("Failed to get products");
         dbg!(products);
     }
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn product_one_id() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let product = client.product("17461000").await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
+        let product = client.product("17461000").await.expect("Failed to get product");
         dbg!(product);
     }
-    // #[tokio::test]
-    // async fn product_candles() {
-    //     let username = std::env::args().nth(2).expect("no username given");
-    //     let password = std::env::args().nth(3).expect("no password given");
-    //     let mut builder = ClientBuilder::default();
-    //     let client = builder
-    //         .username(&username)
-    //         .password(&password)
-    //         .build()
-    //         .unwrap();
-    //     let product = client.product_by_symbol("msft").await.unwrap();
-    //     let candles = product.candles(&Period::P1Y, &Period::P1M).await.unwrap();
-    //     dbg!(candles);
-    // }
 }

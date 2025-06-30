@@ -206,7 +206,7 @@ impl RiskCalculator for RiskData {
             gross_investment_risk: non_d_abs_value * dec!(0.10) + d_abs_value,
             currency_risk,
             liquidity_risk: liquidity_max_risk,
-            max_risk: risks.iter().max().unwrap_or(&Decimal::ZERO).clone(),
+            max_risk: *risks.iter().max().unwrap_or(&Decimal::ZERO),
         }
     }
 }
@@ -221,20 +221,22 @@ mod tests {
     };
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_risk_calculator() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let xs = client.portfolio(false).await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
+        let xs = client.portfolio(false).await.expect("Failed to get portfolio");
         let xs = xs.current().0;
         let risk_data = RiskData::from(xs);
         dbg!(risk_data.portfolio_risk());
     }
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_allocation_risk_calculator() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
 
         // Create test allocations
         let allocations = vec![
@@ -246,7 +248,7 @@ mod tests {
         // Fetch products and create allocations
         let mut portfolio_allocations = Vec::new();
         for (id, allocation) in allocations {
-            let product = client.product(id).await.unwrap().unwrap();
+            let product = client.product(id).await.expect("Failed to get product").expect("Product not found");
             portfolio_allocations.push(RiskAllocation {
                 product,
                 allocation,

@@ -1,65 +1,49 @@
 use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
-use futures_concurrency::future::Join;
-
-use reqwest::{header, Url};
+use futures_concurrency::future::TryJoin;
+use rust_decimal::Decimal;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ClientError, DataError},
+    http::{HttpClient, HttpRequest},
     models::{
-        AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType,
-        Currency, Money, Period,
+        AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType, Money, Period,
     },
     paths::{
         ACCOUNT_CONFIG_PATH, ACCOUNT_INFO_PATH, ACCOUNT_OVERVIEW_PATH, BASE_API_URL,
-        CASH_ACCOUNT_REPORT_URL, PA_URL, REFERER, REPORTING_URL, TRADING_URL,
+        CASH_ACCOUNT_REPORT_URL, PA_URL, REPORTING_URL,
     },
+    session::AuthState,
 };
 
 impl Degiro {
     pub(crate) async fn account_config(&self) -> Result<(), ClientError> {
-        if !self.is_authorized() {
-            self.login().await?;
-        }
-
-        let url = Url::parse(BASE_API_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join(ACCOUNT_CONFIG_PATH)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        let req = self.http_client.get(url).header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            if err.status().unwrap().as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await.map_err(|e| {
-                ClientError::UnexpectedError(format!("Failed to parse error response: {}", e))
-            })?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let mut response_data: HashMap<String, AccountConfig> = res.json().await?;
+        let url = format!("{BASE_API_URL}{ACCOUNT_CONFIG_PATH}");
+        
+        let mut response_data: HashMap<String, AccountConfig> = self.request(
+            HttpRequest::get(url)
+        ).await?;
 
         let account_config = response_data
             .remove("data")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))?;
+            .ok_or_else(|| DataError::missing_field("data"))?;
 
         // Update client state
         self.set_client_id(account_config.client_id);
         self.set_account_config(account_config);
-        self.set_auth_state(ClientStatus::Authorized);
+        self.set_auth_state(AuthState::Authorized)?;
 
         // Get additional account data
         let account_data = self.account_data().await?;
         self.set_int_account(account_data.int_account);
+
+        // Save session after successful full authorization
+        if let Err(e) = self.save_session() {
+            // Don't fail the auth if we can't save the session
+            tracing::warn!("Failed to save session after full authorization: {}", e);
+        }
 
         Ok(())
     }
@@ -67,92 +51,44 @@ impl Degiro {
 
 impl Degiro {
     pub async fn account_data(&self) -> Result<AccountData, ClientError> {
-        if !self.is_authorized() {
-            self.login().await?;
-        }
-
-        let url = Url::parse(PA_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join("client")
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[("sessionId", self.session_id())])
-            .header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let response_data: HashMap<String, AccountData> = res.json().await?;
+        let url = format!("{PA_URL}/client");
+        
+        let response_data: HashMap<String, AccountData> = self.request(
+            HttpRequest::get(url)
+                .require_restricted() // Only needs login, not full auth
+                .query("sessionId", self.session_id())
+        ).await?;
 
         response_data
             .get("data")
             .cloned()
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))
+            .ok_or_else(|| DataError::missing_field("data").into())
     }
 }
 
 impl Degiro {
     pub async fn account_info(&self) -> Result<AccountInfo, ClientError> {
-        self.ensure_authorized().await?;
+        let url = self.build_trading_url(ACCOUNT_INFO_PATH)?;
+        
+        let mut response_data: HashMap<String, AccountInfo> = self.request(
+            HttpRequest::get(url)
+                .query("sessionId", self.session_id())
+        ).await?;
 
-        let url = Url::parse(TRADING_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join(ACCOUNT_INFO_PATH)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join(&format!(
-                "{};jsessionid={}",
-                self.int_account(),
-                self.session_id()
-            ))
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[("sessionId", self.session_id())])
-            .header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let mut response_data: HashMap<String, AccountInfo> = res.json().await?;
-
-        response_data
+        let account_info = response_data
             .remove("data")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))
+            .ok_or_else(|| DataError::missing_field("data"))?;
+
+        // Extract and store currency rates in session
+        let currency_rates: HashMap<String, Decimal> = account_info
+            .currency_pairs
+            .iter()
+            .map(|(pair_name, currency_pair)| (pair_name.clone(), currency_pair.price))
+            .collect();
+        
+        self.session.set_currency_rates(currency_rates);
+
+        Ok(account_info)
     }
 }
 
@@ -162,69 +98,37 @@ impl Degiro {
         from_date: &NaiveDate,
         to_date: &NaiveDate,
     ) -> Result<AccountState, ClientError> {
-        self.ensure_authorized().await?;
-
-        let req = {
-            let url = Url::parse(REPORTING_URL)
-                .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-                .join(ACCOUNT_OVERVIEW_PATH)
-                .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-            self.http_client
-                .get(url)
-                .query(&[
-                    ("sessionId", self.session_id()),
-                    ("intAccount", self.int_account().to_string()),
-                    ("fromDate", from_date.format("%d/%m/%Y").to_string()),
-                    ("toDate", to_date.format("%d/%m/%Y").to_string()),
-                ])
-                .header(header::REFERER, REFERER)
-        };
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            if err.status().unwrap().as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await.map_err(|e| {
-                ClientError::UnexpectedError(format!("Failed to parse error response: {}", e))
-            })?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let mut body: HashMap<String, HashMap<String, Vec<CashMovement>>> = res.json().await?;
+        let url = format!("{REPORTING_URL}{ACCOUNT_OVERVIEW_PATH}");
+        
+        let mut body: HashMap<String, HashMap<String, Vec<CashMovement>>> = self.request(
+            HttpRequest::get(url)
+                .query("sessionId", self.session_id())
+                .query("intAccount", self.int_account().to_string())
+                .query("fromDate", from_date.format("%d/%m/%Y").to_string())
+                .query("toDate", to_date.format("%d/%m/%Y").to_string())
+        ).await?;
 
         let mut data = body
             .remove("data")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))?;
+            .ok_or_else(|| DataError::missing_field("data"))?;
 
         let state = data
             .remove("cashMovements")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing cashMovements key".to_string()))?;
+            .ok_or_else(|| DataError::missing_field("cashMovements"))?;
 
-        Ok(AccountState(state))
+        Ok(AccountState::new(state))
     }
 
     pub async fn balance(&self) -> Result<Money, ClientError> {
         self.ensure_authorized().await?;
 
         let to_date = Utc::now().date_naive();
-        let from_date = to_date - Period::P3Y;
+        let from_date = Period::P3Y.subtract_from_date(to_date);
         let (account_info, account_state, portfolio_value) = (
             self.account_info(),
             self.account_state(&from_date, &to_date),
             self.total_portfolio_value(),
-        )
-            .join()
-            .await;
-        let account_info = account_info?;
-        let account_state = account_state?;
-        let portfolio_value = portfolio_value?;
+        ).try_join().await?;
 
         let current_balance = account_state
             .iter()
@@ -233,7 +137,10 @@ impl Degiro {
                     && movement.currency == account_info.base_currency
             })
             .map(|movement| movement.balance.total)
-            .unwrap();
+            .unwrap_or_else(|| {
+                // No FxCredit movement found, assume zero balance
+                Decimal::ZERO
+            });
 
         let total_value = portfolio_value + current_balance;
 
@@ -247,127 +154,80 @@ impl Degiro {
         from_date: &NaiveDate,
         to_date: &NaiveDate,
     ) -> Result<String, ClientError> {
-        self.ensure_authorized().await?;
-
-        let url = Url::parse(CASH_ACCOUNT_REPORT_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join("csv")
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[
-                ("sessionId", self.session_id()),
-                ("intAccount", self.int_account().to_string()),
-                ("country", "PL".to_string()),
-                ("lang", "pl".to_string()),
-                ("fromDate", from_date.format("%d/%m/%Y").to_string()),
-                ("toDate", to_date.format("%d/%m/%Y").to_string()),
-            ])
-            .header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let body = res
-            .text()
-            .await
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        Ok(body)
+        let url = format!("{CASH_ACCOUNT_REPORT_URL}/csv");
+        
+        self.request_text(
+            HttpRequest::get(url)
+                .query("sessionId", self.session_id())
+                .query("intAccount", self.int_account().to_string())
+                .query("country", "PL")
+                .query("lang", "pl")
+                .query("fromDate", from_date.format("%d/%m/%Y").to_string())
+                .query("toDate", to_date.format("%d/%m/%Y").to_string())
+        ).await
     }
 }
 
 #[cfg(test)]
 mod test {
-    use futures_concurrency::future::TryJoin;
+    // use futures_concurrency::future::TryJoin;
 
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_account_data() {
-        let client = Degiro::new_from_env();
-        // client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        dbg!(&client.account_config);
-        // let data = client.account_data().await.unwrap();
-        // dbg!(data);
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.account_config().await.expect("Failed to get account configuration");
     }
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_account_info() {
-        let client = Degiro::new_from_env();
-        let info = client.account_info().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let info = client.account_info().await.expect("Failed to get account info");
         dbg!(info);
     }
 
-    // #[tokio::test]
-    // async fn test_account_info_and_data() {
-    //     let client = Degiro::new_from_env();
-    //     let (account_info, account_data) = match (client.account_info(), client.account_data())
-    //         .try_join()
-    //         .await
-    //     {
-    //         Ok((account_info, account_data)) => (account_info, account_data),
-    //         Err(e) => {
-    //             panic!("Failed to fetch account info: {e}")
-    //         }
-    //     };
-    // }
-
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_account_state() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        // dbg!(&client);
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
         let state = client
             .account_state(
-                &NaiveDate::from_ymd_opt(2024, 11, 1).unwrap(),
-                &NaiveDate::from_ymd_opt(2024, 12, 31).unwrap(),
+                &NaiveDate::from_ymd_opt(2024, 11, 1).expect("Failed to create start date"),
+                &NaiveDate::from_ymd_opt(2024, 12, 31).expect("Failed to create end date"),
             )
             .await
-            .unwrap();
+            .expect("Failed to get account state");
         dbg!(state);
     }
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_cash_report() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
         let report = client
             .cash_report(
-                &NaiveDate::from_ymd_opt(2024, 10, 1).unwrap(),
-                &NaiveDate::from_ymd_opt(2024, 11, 28).unwrap(),
+                &NaiveDate::from_ymd_opt(2024, 10, 1).expect("Failed to create start date"),
+                &NaiveDate::from_ymd_opt(2024, 11, 28).expect("Failed to create end date"),
             )
             .await
-            .unwrap();
+            .expect("Failed to get cash report");
         dbg!(report);
     }
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_balance() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let balance = client.balance().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
+        let balance = client.balance().await.expect("Failed to get account balance");
         dbg!(balance);
     }
 }

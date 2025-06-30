@@ -1,16 +1,14 @@
 use chrono::{DateTime, FixedOffset, NaiveDate};
-use reqwest::{header, Url};
 use serde::{Deserialize, Serialize};
 
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use std::collections::HashMap;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ClientError, DataError},
+    http::{HttpClient, HttpRequest},
     models::TransactionType,
-    paths::REPORTING_URL,
+    paths::{REPORTING_URL, TRANSACTIONS_PATH},
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -41,19 +39,52 @@ pub struct Transaction {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Transactions(pub Vec<Transaction>);
+pub struct Transactions(Vec<Transaction>);
 
-impl Deref for Transactions {
-    type Target = Vec<Transaction>;
+impl Transactions {
+    /// Create a new Transactions collection
+    pub fn new(transactions: Vec<Transaction>) -> Self {
+        Self(transactions)
+    }
 
-    fn deref(&self) -> &Self::Target {
+    /// Get a reference to the transactions
+    pub fn transactions(&self) -> &[Transaction] {
         &self.0
     }
-}
 
-impl DerefMut for Transactions {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    /// Get a mutable reference to the transactions
+    pub fn transactions_mut(&mut self) -> &mut Vec<Transaction> {
         &mut self.0
+    }
+
+    /// Get the number of transactions
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Check if the collection is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Add a transaction to the collection
+    pub fn push(&mut self, transaction: Transaction) {
+        self.0.push(transaction);
+    }
+
+    /// Iterate over the transactions
+    pub fn iter(&self) -> std::slice::Iter<'_, Transaction> {
+        self.0.iter()
+    }
+
+    /// Iterate over the transactions mutably
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Transaction> {
+        self.0.iter_mut()
+    }
+
+    /// Convert into the underlying Vec
+    pub fn into_vec(self) -> Vec<Transaction> {
+        self.0
     }
 }
 
@@ -71,48 +102,20 @@ impl Degiro {
         from_date: impl Into<NaiveDate> + Send,
         to_date: impl Into<NaiveDate> + Send,
     ) -> Result<Transactions, ClientError> {
-        self.ensure_authorized().await?;
-
-        let url = Url::parse(REPORTING_URL)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-            .join(crate::paths::TRANSACTIONS_PATH)
-            .map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[
-                ("sessionId", self.session_id()),
-                ("intAccount", self.int_account().to_string()),
-                ("fromDate", from_date.into().format("%d/%m/%Y").to_string()),
-                ("toDate", to_date.into().format("%d/%m/%Y").to_string()),
-                ("groupTransactionsByOrder", "1".to_string()),
-            ])
-            .header(header::REFERER, crate::paths::REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let mut response_data = res.json::<HashMap<String, Vec<Transaction>>>().await?;
+        let url = format!("{REPORTING_URL}{TRANSACTIONS_PATH}");
+        
+        let mut response_data = self.request::<HashMap<String, Vec<Transaction>>>(
+            HttpRequest::get(url)
+                .query("sessionId", self.session_id())
+                .query("intAccount", self.int_account().to_string())
+                .query("fromDate", from_date.into().format("%d/%m/%Y").to_string())
+                .query("toDate", to_date.into().format("%d/%m/%Y").to_string())
+                .query("groupTransactionsByOrder", "1")
+        ).await?;
 
         let transactions = response_data
             .remove("data")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing data key".into()))?;
+            .ok_or_else(|| DataError::missing_field("data"))?;
 
         Ok(Transactions(transactions))
     }
@@ -125,18 +128,19 @@ mod test {
     use crate::client::Degiro;
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn transactions() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
 
         let transactions = client
             .transactions(
-                NaiveDate::from_ymd_opt(2021, 1, 1).unwrap(),
-                NaiveDate::from_ymd_opt(2022, 12, 31).unwrap(),
+                NaiveDate::from_ymd_opt(2021, 1, 1).expect("Failed to create start date"),
+                NaiveDate::from_ymd_opt(2022, 12, 31).expect("Failed to create end date"),
             )
             .await
-            .unwrap();
+            .expect("Failed to get transactions");
         dbg!(transactions);
     }
 }

@@ -1,7 +1,9 @@
 use reqwest::header;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ApiErrorResponse, ClientError, DataError, ResponseError},
+    session::AuthState,
     models::News,
 };
 
@@ -45,11 +47,11 @@ impl Degiro {
 
         if let Err(err) = res.error_for_status_ref() {
             let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
+                return Err(ClientError::ResponseError(ResponseError::invalid(err.to_string())));
             };
 
             if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
+                let _ = self.set_auth_state(AuthState::Unauthorized);
                 return Err(ClientError::Unauthorized);
             }
 
@@ -67,10 +69,10 @@ impl Degiro {
         let news = data
             .get("items")
             .and_then(|v| v.as_array())
-            .ok_or(ClientError::UnexpectedError("Missing items field".into()))?
+            .ok_or_else(|| DataError::missing_field("items"))?
             .iter()
-            .map(News::from)
-            .collect();
+            .map(|item| serde_json::from_value::<News>(item.clone()))
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(news))
     }
@@ -80,13 +82,16 @@ impl Degiro {
 mod tests {
     use crate::client::Degiro;
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_news_by_company() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let news = client.company_news("US7433151039").await.unwrap();
-        for x in &news {
-            println!("{}", serde_json::to_string_pretty(x).unwrap());
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
+        let news = client.company_news("US7433151039").await.expect("Failed to get company news");
+        if let Some(news_items) = &news {
+            for x in news_items {
+                println!("{}", serde_json::to_string_pretty(x).expect("Failed to serialize news item to JSON"));
+            }
         }
     }
 }

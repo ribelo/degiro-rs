@@ -1,14 +1,12 @@
-use std::ops::{Deref, DerefMut};
 
 use chrono::NaiveDateTime;
-use reqwest::{header, Url};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ClientError, DataError, DateTimeError, ResponseError},
+    http::{HttpClient, HttpRequest},
     models::Period,
-    paths::REFERER,
 };
 
 #[derive(Debug, Deserialize)]
@@ -35,17 +33,60 @@ pub struct Candles {
     pub data: Vec<Candle>,
 }
 
-impl Deref for Candles {
-    type Target = Vec<Candle>;
+impl Candles {
+    /// Create a new Candles collection
+    pub fn new(interval: Period, data: Vec<Candle>) -> Self {
+        Self { interval, data }
+    }
 
-    fn deref(&self) -> &Self::Target {
+    /// Get a reference to the candles data
+    pub fn candles(&self) -> &[Candle] {
         &self.data
     }
-}
 
-impl DerefMut for Candles {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    /// Get a mutable reference to the candles data
+    pub fn candles_mut(&mut self) -> &mut Vec<Candle> {
         &mut self.data
+    }
+
+    /// Get the number of candles
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    /// Check if the collection is empty
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    /// Add a candle to the collection
+    pub fn push(&mut self, candle: Candle) {
+        self.data.push(candle);
+    }
+
+    /// Remove the last candle
+    pub fn pop(&mut self) -> Option<Candle> {
+        self.data.pop()
+    }
+
+    /// Get the last candle
+    pub fn last(&self) -> Option<&Candle> {
+        self.data.last()
+    }
+
+    /// Iterate over the candles
+    pub fn iter(&self) -> std::slice::Iter<'_, Candle> {
+        self.data.iter()
+    }
+
+    /// Iterate over the candles mutably
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Candle> {
+        self.data.iter_mut()
+    }
+
+    /// Convert into the underlying Vec
+    pub fn into_data(self) -> Vec<Candle> {
+        self.data
     }
 }
 
@@ -56,7 +97,7 @@ impl Candles {
         }
 
         if let Some(last) = self.data.last() {
-            if last.time < self.data[self.data.len() - 2].time + self.interval {
+            if last.time < self.interval.add_to_datetime_naive(self.data[self.data.len() - 2].time) {
                 self.data.pop();
             }
         }
@@ -72,7 +113,7 @@ impl Candles {
         let last_idx = self.data.len() - 1;
         let prev_idx = last_idx - 1;
 
-        let periods_elapsed = (0..n).fold(self.data[prev_idx].time, |acc, _| acc + period);
+        let periods_elapsed = (0..n).fold(self.data[prev_idx].time, |acc, _| period.add_to_datetime_naive(acc));
         if periods_elapsed > self.data[last_idx].time {
             return Candles {
                 interval: self.interval,
@@ -105,15 +146,18 @@ fn ohlc_vec_to_candles(
                     | Period::P50Y
             ) {
                 if i != ohlc.len() - 1 {
-                    chronoutil::delta::with_day((0..x.n).fold(start, |acc, _| acc + interval), 31)
+                    chronoutil::delta::with_day((0..x.n).fold(start, |acc, _| interval.add_to_datetime_naive(acc)), 31)
                         .ok_or_else(|| {
-                        ClientError::UnexpectedError("Failed to compute month delta".into())
+                        ClientError::from(DateTimeError::ParseError {
+                            input: "month delta computation".to_string(),
+                            reason: "Failed to compute month delta".to_string(),
+                        })
                     })?
                 } else {
                     end
                 }
             } else {
-                (0..x.n).fold(start, |acc, _| acc + interval)
+                (0..x.n).fold(start, |acc, _| interval.add_to_datetime_naive(acc))
             };
 
             Ok(Candle {
@@ -151,45 +195,18 @@ impl Degiro {
         interval: Period,
     ) -> Result<Option<Candles>, ClientError> {
         let vwd_id = vwd_id.as_ref();
-        self.ensure_authorized().await?;
-
-        let req = {
-            let base_url = "https://charting.vwdservices.com/hchart/v1/deGiro/data.js";
-            let url =
-                Url::parse(base_url).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-
-            self.http_client
-                .get(url)
-                .query(&[
-                    ("requestid", "1"),
-                    ("format", "json"),
-                    ("resolution", &interval.to_string()),
-                    ("period", &period.to_string()),
-                    ("series", &format!("ohlc:issueid:{}", vwd_id)),
-                    ("userToken", &self.client_id().to_string()),
-                ])
-                .header(header::REFERER, REFERER)
-        };
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let mut body = res.json::<Value>().await?;
+        let url = "https://charting.vwdservices.com/hchart/v1/deGiro/data.js";
+        
+        let mut body = self.request_json(
+            HttpRequest::get(url)
+                .require_restricted() // Quotes only need login
+                .query("requestid", "1")
+                .query("format", "json")
+                .query("resolution", interval.to_string())
+                .query("period", period.to_string())
+                .query("series", format!("ohlc:issueid:{vwd_id}"))
+                .query("userToken", self.client_id().to_string())
+        ).await?;
 
         let error = body
             .get("series")
@@ -199,17 +216,17 @@ impl Degiro {
             .and_then(|error| error.as_str());
 
         if let Some(error) = error {
-            return Err(ClientError::UnexpectedError(error.to_string()));
+            return Err(ResponseError::invalid(error.to_string()).into());
         }
 
         let start = body
             .get("start")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing start timestamp".into()))?;
+            .ok_or_else(|| DataError::missing_field("start"))?;
         let start = serde_json::from_value::<NaiveDateTime>(start.clone())?;
 
         let end = body
             .get("end")
-            .ok_or_else(|| ClientError::UnexpectedError("Missing end timestamp".into()))?;
+            .ok_or_else(|| DataError::missing_field("end"))?;
         let end = serde_json::from_value::<NaiveDateTime>(end.clone())?;
 
         let data = body
@@ -219,7 +236,7 @@ impl Degiro {
             .and_then(|s| s.get_mut("data"))
             .map(|d| d.take())
             .ok_or_else(|| {
-                ClientError::UnexpectedError("Missing or invalid data in series".to_string())
+                ClientError::from(DataError::missing_field("series[0].data"))
             })?;
 
         let ohlc_vec = serde_json::from_value::<Vec<Ohlc>>(data)?;
@@ -232,10 +249,11 @@ mod test {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_quotes() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
         let quotes = client
             .quotes_by_id("332111", Period::P1Y, Period::P1M)
             .await

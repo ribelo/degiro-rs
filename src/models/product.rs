@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Debug},
-    ops::{Deref, DerefMut},
-};
+use std::fmt::{self, Debug};
 
 use chrono::NaiveDate;
 use derivative::Derivative;
@@ -11,62 +8,7 @@ use rust_decimal::Decimal;
 
 use crate::models::{AllowedOrderTypes, OrderTimeTypes};
 
-use super::{risk::RiskCategory, CompanyProfile, Currency};
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
-pub enum Exchange {
-    #[serde(rename = "663")]
-    NSDQ,
-    #[serde(rename = "676")]
-    NSY,
-    #[serde(rename = "200")]
-    EAM,
-    #[serde(rename = "194")]
-    XET,
-    #[serde(rename = "196")]
-    TDG,
-    #[serde(rename = "710")]
-    EPA,
-    #[serde(rename = "801")]
-    WSE,
-    #[serde(rename = "5001")]
-    TSE,
-    #[serde(rename = "520")]
-    OSL,
-    #[serde(rename = "947")]
-    SWX,
-    #[serde(rename = "860")]
-    OMX,
-    #[serde(rename = "219")]
-    ATH,
-    #[serde(rename = "650")]
-    ASE,
-    #[serde(rename = "893")]
-    TSV,
-    #[serde(rename = "5002")]
-    ASX,
-    #[serde(rename = "570")]
-    LSE,
-    #[serde(rename = "892")]
-    TOR,
-    #[serde(rename = "454")]
-    HKS,
-    Unknown,
-}
-
-impl From<Exchange> for Currency {
-    fn from(exchange: Exchange) -> Self {
-        match exchange {
-            Exchange::NSY | Exchange::NSDQ => Currency::USD,
-            Exchange::XET | Exchange::TDG | Exchange::EAM => Currency::EUR,
-            Exchange::SWX => Currency::CHF,
-            Exchange::TSE => Currency::JPY,
-            Exchange::WSE => Currency::PLN,
-            Exchange::LSE => Currency::GBP,
-            _ => Currency::EUR,
-        }
-    }
-}
+use super::{risk::RiskCategory, CompanyProfile, Exchange};
 
 #[derive(Clone, Debug, Deserialize, Derivative, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -149,19 +91,57 @@ impl Product {
 }
 
 #[derive(Debug, Default)]
-pub struct Products(pub Vec<Product>);
+pub struct Products(Vec<Product>);
 
-impl Deref for Products {
-    type Target = Vec<Product>;
+impl Products {
+    /// Create a new Products collection
+    pub fn new(products: Vec<Product>) -> Self {
+        Self(products)
+    }
 
-    fn deref(&self) -> &Self::Target {
+    /// Get a reference to the products
+    pub fn products(&self) -> &[Product] {
         &self.0
     }
-}
 
-impl DerefMut for Products {
-    fn deref_mut(&mut self) -> &mut Self::Target {
+    /// Get a mutable reference to the products
+    pub fn products_mut(&mut self) -> &mut Vec<Product> {
         &mut self.0
+    }
+
+    /// Get the number of products
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Check if the collection is empty
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Add a product to the collection
+    pub fn push(&mut self, product: Product) {
+        self.0.push(product);
+    }
+
+    /// Remove all products from the collection
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+
+    /// Iterate over the products
+    pub fn iter(&self) -> std::slice::Iter<'_, Product> {
+        self.0.iter()
+    }
+
+    /// Iterate over the products mutably
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Product> {
+        self.0.iter_mut()
+    }
+
+    /// Convert into the underlying Vec
+    pub fn into_vec(self) -> Vec<Product> {
+        self.0
     }
 }
 

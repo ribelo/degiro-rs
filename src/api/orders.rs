@@ -1,15 +1,15 @@
 use bon::Builder;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derive_more::derive::From;
-use reqwest::{header, Url};
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::{
-    client::{ApiErrorResponse, ClientError, ClientStatus, Degiro},
+    client::Degiro,
+    error::{ClientError, DataError, ResponseError},
+    http::{HttpClient, HttpRequest},
     models::{Order, OrderTimeType, OrderType, Orders, Position, TransactionType},
-    paths::{REFERER, TRADING_URL, UPDATE_DATA_PATH},
+    paths::{UPDATE_DATA_PATH, TRADING_URL},
 };
 
 impl Degiro {
@@ -20,49 +20,17 @@ impl Degiro {
     }
 
     pub async fn orders(&self) -> Result<Orders, ClientError> {
-        self.ensure_authorized().await?;
+        let url = self.build_trading_url(UPDATE_DATA_PATH)?;
 
-        let url = {
-            let session_id = self.session_id();
-            let int_account = self.int_account();
+        let json = self.request_json(
+            HttpRequest::get(url)
+                .query("orders", "0")
+        ).await?;
 
-            Url::parse(TRADING_URL)
-                .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-                .join(UPDATE_DATA_PATH)
-                .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-                .join(&format!("{};jsessionid={}", int_account, session_id))
-                .map_err(|e| ClientError::UnexpectedError(e.to_string()))?
-        };
-
-        let req = self
-            .http_client
-            .get(url)
-            .query(&[("orders", "0")])
-            .header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let json = res.json::<serde_json::Value>().await?;
         let orders = json
             .get("orders")
             .and_then(|o| o.get("value").cloned())
-            .ok_or_else(|| ClientError::UnexpectedError("Missing required fields".into()))
+            .ok_or_else(|| DataError::missing_field("orders.value").into())
             .and_then(Orders::try_from)?;
         Ok(orders)
     }
@@ -105,51 +73,20 @@ impl Degiro {
         &self,
         order: CreateOrderRequest,
     ) -> Result<serde_json::Value, ClientError> {
-        self.ensure_authorized().await?;
+        let session_id = self.session_id();
+        let int_account = self.int_account();
 
-        let url = {
-            let session_id = self.session_id();
-            let int_account = self.int_account();
+        let url = format!("{TRADING_URL}/v5/checkOrder;jsessionid={session_id}");
 
-            let mut url =
-                Url::parse(TRADING_URL).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-            url.path_segments_mut()
-                .map_err(|_| ClientError::UnexpectedError("Cannot modify URL segments".into()))?
-                .push("v5")
-                .push(&format!("checkOrder;jsessionid={}", session_id));
-
-            url.query_pairs_mut()
-                .append_pair("intAccount", &int_account.to_string())
-                .append_pair("sessionId", &session_id);
-            url
-        };
-
-        let req = self
-            .http_client
-            .post(url)
-            .header(header::REFERER, REFERER)
-            .json(&order);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let json = res.json::<Value>().await?;
-        let order_id = json["data"]["confirmationId"].as_str().unwrap();
+        let json = self.request_json(
+            HttpRequest::post(url)
+                .query("intAccount", int_account.to_string())
+                .query("sessionId", &session_id)
+                .json(&order)?
+        ).await?;
+        let order_id = json["data"]["confirmationId"]
+            .as_str()
+            .ok_or_else(|| DataError::missing_field("data.confirmationId"))?;
         self.confirm_order(order_id, order).await
     }
 
@@ -158,50 +95,19 @@ impl Degiro {
         order_id: &str,
         order: impl Serialize,
     ) -> Result<serde_json::Value, ClientError> {
-        self.ensure_authorized().await?;
+        let session_id = self.session_id();
+        let int_account = self.int_account();
 
-        let url = {
-            let session_id = self.session_id();
-            let int_account = self.int_account();
+        let url = format!(
+            "{TRADING_URL}v5/order/{order_id};jsessionid={session_id}"
+        );
 
-            let mut url =
-                Url::parse(TRADING_URL).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-            url.path_segments_mut()
-                .map_err(|_| ClientError::UnexpectedError("Cannot modify URL segments".into()))?
-                .push("v5")
-                .push(&format!("order/{};jsessionid={}", order_id, session_id));
-
-            url.query_pairs_mut()
-                .append_pair("intAccount", &int_account.to_string())
-                .append_pair("sessionId", &session_id);
-            url
-        };
-
-        let req = self
-            .http_client
-            .post(url)
-            .header(header::REFERER, REFERER)
-            .json(&order);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        Ok(res.json().await?)
+        self.request_json(
+            HttpRequest::post(url)
+                .query("intAccount", int_account.to_string())
+                .query("sessionId", &session_id)
+                .json(&order)?
+        ).await
     }
 }
 
@@ -289,52 +195,20 @@ impl Degiro {
         &self,
         request: ModifyOrderRequest,
     ) -> Result<serde_json::Value, ClientError> {
-        self.ensure_authorized().await?;
+        let session_id = self.session_id();
+        let int_account = self.int_account();
 
-        let url = {
-            let session_id = self.session_id();
-            let int_account = self.int_account();
+        let url = format!(
+            "{}v5/order/{};jsessionid={}",
+            TRADING_URL, request.id, session_id
+        );
 
-            let mut url =
-                Url::parse(TRADING_URL).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-            url.path_segments_mut()
-                .map_err(|_| ClientError::UnexpectedError("Cannot modify URL segments".into()))?
-                .push("v5")
-                .push("order")
-                .push(&format!("{};jsessionid={}", request.id, session_id));
-
-            url.query_pairs_mut()
-                .append_pair("intAccount", &int_account.to_string())
-                .append_pair("sessionId", &session_id);
-            url
-        };
-
-        let req = self
-            .http_client
-            .put(url)
-            .header(header::REFERER, REFERER)
-            .json(&request);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        let json = res.json::<serde_json::Value>().await?;
-        Ok(json)
+        self.request_json(
+            HttpRequest::put(url)
+                .query("intAccount", int_account.to_string())
+                .query("sessionId", &session_id)
+                .json(&request)?
+        ).await
     }
 }
 
@@ -343,50 +217,19 @@ impl Degiro {
         &self,
         request: DeleteOrderRequest,
     ) -> Result<serde_json::Value, ClientError> {
-        self.ensure_authorized().await?;
+        let session_id = self.session_id();
+        let int_account = self.int_account();
 
-        let url = {
-            let session_id = self.session_id();
-            let int_account = self.int_account();
+        let url = format!(
+            "{}v5/order/{};jsessionid={}",
+            TRADING_URL, request.id, session_id
+        );
 
-            let mut url =
-                Url::parse(TRADING_URL).map_err(|e| ClientError::UnexpectedError(e.to_string()))?;
-            url.path_segments_mut()
-                .map_err(|_| ClientError::UnexpectedError("Cannot modify URL segments".into()))?
-                .push("v5")
-                .push("order")
-                .push(&format!("{};jsessionid={}", request.id, session_id));
-
-            url.query_pairs_mut()
-                .append_pair("intAccount", &int_account.to_string())
-                .append_pair("sessionId", &session_id);
-            url
-        };
-
-        let req = self
-            .http_client
-            .delete(url)
-            .header(header::REFERER, REFERER);
-
-        self.acquire_limit().await;
-
-        let res = req.send().await?;
-
-        if let Err(err) = res.error_for_status_ref() {
-            let Some(status) = err.status() else {
-                return Err(ClientError::UnexpectedError(err.to_string()));
-            };
-
-            if status.as_u16() == 401 {
-                self.set_auth_state(ClientStatus::Unauthorized);
-                return Err(ClientError::Unauthorized);
-            }
-
-            let error_response = res.json::<ApiErrorResponse>().await?;
-            return Err(ClientError::ApiError(error_response));
-        }
-
-        Ok(res.json().await?)
+        self.request_json(
+            HttpRequest::delete(url)
+                .query("intAccount", int_account.to_string())
+                .query("sessionId", &session_id)
+        ).await
     }
 }
 
@@ -397,7 +240,7 @@ impl TryFrom<serde_json::Value> for Order {
         let xs = value
             .get("value")
             .and_then(|v| v.as_array())
-            .ok_or_else(|| ClientError::UnexpectedError("Value must be an array".into()))?;
+            .ok_or_else(|| ResponseError::unexpected_structure("Order value must be an array"))?;
 
         // Create a lookup map for faster key access
         let value_map: std::collections::HashMap<_, _> = xs
@@ -405,22 +248,22 @@ impl TryFrom<serde_json::Value> for Order {
             .filter_map(|v| Some((v["name"].as_str()?, v["value"].clone())))
             .collect();
 
-        let get_value = |k: &str| {
+        let get_value = |k: &str| -> Result<serde_json::Value, ClientError> {
             value_map
                 .get(k)
                 .cloned()
-                .ok_or_else(|| ClientError::UnexpectedError(format!("Cannot find key: {}", k)))
+                .ok_or_else(|| ClientError::from(DataError::missing_field(k)))
         };
 
         let date_value = get_value("date")?;
 
         let date_str = date_value
             .as_str()
-            .ok_or_else(|| ClientError::UnexpectedError("Invalid date".into()))?;
+            .ok_or_else(|| DataError::invalid_type("date", "string"))?;
 
         let date = NaiveDateTime::parse_from_str(date_str, "%Y-%m-%dT%H:%M:%S")
             .map(|dt| DateTime::<Utc>::from_naive_utc_and_offset(dt, Utc))
-            .map_err(|e| ClientError::UnexpectedError(format!("Failed to parse date: {}", e)))?
+            .map_err(|e| ClientError::from(DataError::parse_error("order date", e.to_string())))?
             .with_timezone(&Utc);
 
         Ok(Order {
@@ -453,7 +296,7 @@ impl TryFrom<serde_json::Value> for Orders {
         value
             .as_array()
             .cloned()
-            .ok_or_else(|| ClientError::UnexpectedError("Expected array of orders".into()))?
+            .ok_or_else(|| ClientError::from(ResponseError::unexpected_structure("Expected array of orders")))?
             .into_iter()
             .map(Order::try_from)
             .collect::<Result<Vec<_>, _>>()
@@ -463,6 +306,10 @@ impl TryFrom<serde_json::Value> for Orders {
 
 #[cfg(test)]
 mod test {
+    //! ⚠️  WARNING: This module contains DANGEROUS tests that can create, modify, 
+    //! or delete real orders on real trading accounts. Most dangerous tests are 
+    //! commented out for safety. Only uncomment them in a controlled test environment
+    //! with proper safeguards in place.
 
     use rust_decimal_macros::dec;
 
@@ -474,12 +321,13 @@ mod test {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
     async fn test_get_all_orders() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
+        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client.account_config().await.expect("Failed to get account configuration");
 
-        let orders = client.orders().await.unwrap();
+        let orders = client.orders().await.expect("Failed to get orders");
         dbg!(orders);
     }
 
@@ -494,58 +342,64 @@ mod test {
             .stop_price(dec!(221.60))
             .build();
 
-        println!("{}", serde_json::to_string_pretty(&req).unwrap());
+        println!("{}", serde_json::to_string_pretty(&req).expect("Failed to serialize order request to JSON"));
     }
-    #[tokio::test]
-    async fn test_modify_order() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        // 55b9c001-be1e-4788-ace3-66876548feb2
-        let order = client
-            .get_order("5fa00f68-94c2-4eac-8d8d-dd872756effd")
-            .await
-            .unwrap()
-            .expect("order must exist");
-        let req = ModifyOrderRequest::from(order).stop_price(Some(dec!(397)));
-        let json = serde_json::to_string_pretty(&req).unwrap();
-        println!("{json}");
-        // dbg!(&req);
-        let res = client.modify_order(req).await.unwrap();
-        // dbg!(&res);
-    }
+    // DANGEROUS TEST COMMENTED OUT - MODIFIES REAL ORDERS
+    // #[tokio::test]
+    // #[ignore = "Unsafe: modifies real orders on real account"]
+    // async fn test_modify_order() {
+    //     let client = Degiro::load_from_env().unwrap();
+    //     client.login().await.unwrap();
+    //     client.account_config().await.unwrap();
+    //     // 55b9c001-be1e-4788-ace3-66876548feb2
+    //     let order = client
+    //         .get_order("5fa00f68-94c2-4eac-8d8d-dd872756effd")
+    //         .await
+    //         .unwrap()
+    //         .expect("order must exist");
+    //     let req = ModifyOrderRequest::from(order).stop_price(Some(dec!(397)));
+    //     let json = serde_json::to_string_pretty(&req).unwrap();
+    //     println!("{json}");
+    //     // dbg!(&req);
+    //     let _res = client.modify_order(req).await.unwrap();
+    //     // dbg!(&res);
+    // }
 
-    #[tokio::test]
-    async fn test_delete_order() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        // 55b9c001-be1e-4788-ace3-66876548feb2
-        let order = client
-            .get_order("5fa00f68-94c2-4eac-8d8d-dd872756effd")
-            .await
-            .unwrap()
-            .unwrap();
-        let delete_request = DeleteOrderRequest::from(order);
-        let json = serde_json::to_string_pretty(&delete_request).unwrap();
-        println!("{json}");
-        let res = client.delete_order(delete_request).await.unwrap();
-        dbg!(&res);
-    }
-    #[tokio::test]
-    async fn test_send_order() {
-        let client = Degiro::new_from_env();
-        client.login().await.unwrap();
-        client.account_config().await.unwrap();
-        let order_request = CreateOrderRequest::builder()
-            .order_type(OrderType::Market)
-            .transaction_type(TransactionType::Sell)
-            .product_id("332087")
-            .size(dec!(6.0))
-            .time_type(OrderTimeType::Gtc)
-            .build();
-
-        let resp = client.create_order(order_request).await;
-        dbg!(resp);
-    }
+    // DANGEROUS TEST COMMENTED OUT - DELETES REAL ORDERS
+    // #[tokio::test]
+    // #[ignore = "Unsafe: deletes real orders on real account"]
+    // async fn test_delete_order() {
+    //     let client = Degiro::load_from_env().unwrap();
+    //     client.login().await.unwrap();
+    //     client.account_config().await.unwrap();
+    //     // 55b9c001-be1e-4788-ace3-66876548feb2
+    //     let order = client
+    //         .get_order("5fa00f68-94c2-4eac-8d8d-dd872756effd")
+    //         .await
+    //         .unwrap()
+    //         .unwrap();
+    //     let delete_request = DeleteOrderRequest::from(order);
+    //     let json = serde_json::to_string_pretty(&delete_request).unwrap();
+    //     println!("{json}");
+    //     let res = client.delete_order(delete_request).await.unwrap();
+    //     dbg!(&res);
+    // }
+    // DANGEROUS TEST COMMENTED OUT - CREATES REAL ORDERS
+    // #[tokio::test]
+    // #[ignore = "Unsafe: creates real orders on real account"]
+    // async fn test_send_order() {
+    //     let client = Degiro::load_from_env().unwrap();
+    //     client.login().await.unwrap();
+    //     client.account_config().await.unwrap();
+    //     let order_request = CreateOrderRequest::builder()
+    //         .order_type(OrderType::Market)
+    //         .transaction_type(TransactionType::Sell)
+    //         .product_id("332087")
+    //         .size(dec!(6.0))
+    //         .time_type(OrderTimeType::Gtc)
+    //         .build();
+    //
+    //     let resp = client.create_order(order_request).await;
+    //     dbg!(resp).ok();
+    // }
 }
