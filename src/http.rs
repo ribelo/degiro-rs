@@ -1,4 +1,4 @@
-use backon::{Retryable, ExponentialBuilder};
+use backon::{ExponentialBuilder, Retryable};
 use reqwest::{header, Method, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{collections::HashMap, time::Duration};
@@ -149,7 +149,7 @@ impl HttpClient for Degiro {
 impl Degiro {
     #[instrument(skip(self, req), fields(method = %req.method, path = %req.path, auth_level = ?req.auth_level))]
     async fn execute_request(&self, req: HttpRequest) -> Result<Response, ClientError> {
-        // Auto-authenticate to required level
+        // Auto-authenticate to required level (outside retry logic)
         debug!("Ensuring authentication level: {:?}", req.auth_level);
         self.ensure_auth_level(req.auth_level).await?;
 
@@ -160,10 +160,19 @@ impl Degiro {
             .with_max_times(3);
 
         info!("Executing HTTP request with retry policy");
-        
-        // Execute request with retry logic
+
+        // Execute request with retry logic (auth check already done)
         match (|| self.execute_single_request(&req))
             .retry(&retry_policy)
+            .when(|e| {
+                // Only retry on transient errors, not auth errors
+                matches!(e,
+                    ClientError::RequestError(reqwest_err)
+                        if reqwest_err.is_timeout() || reqwest_err.is_connect() ||
+                           reqwest_err.status().is_some_and(|s|
+                               matches!(s.as_u16(), 500 | 502 | 503 | 504 | 429))
+                )
+            })
             .await
         {
             Ok(response) => {
@@ -184,9 +193,10 @@ impl Degiro {
         let url = if req.query_params.is_empty() {
             req.path.clone()
         } else {
-            let params: Vec<String> = req.query_params
+            let params: Vec<String> = req
+                .query_params
                 .iter()
-                .map(|(k, v)| format!("{k}={v}"))
+                .map(|(k, v)| format!("{}={}", urlencoding::encode(k), urlencoding::encode(v)))
                 .collect();
             format!("{}?{}", req.path, params.join("&"))
         };
@@ -199,7 +209,12 @@ impl Degiro {
             Method::POST => self.http_client.post(&url),
             Method::PUT => self.http_client.put(&url),
             Method::DELETE => self.http_client.delete(&url),
-            _ => return Err(ClientError::InvalidRequest(format!("Unsupported HTTP method: {:?}", req.method))),
+            _ => {
+                return Err(ClientError::InvalidRequest(format!(
+                    "Unsupported HTTP method: {:?}",
+                    req.method
+                )))
+            }
         };
 
         // Add default headers
@@ -247,14 +262,21 @@ impl Degiro {
                 | StatusCode::SERVICE_UNAVAILABLE
                 | StatusCode::GATEWAY_TIMEOUT
                 | StatusCode::TOO_MANY_REQUESTS => {
-                    warn!("Received retryable HTTP error: {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""));
-                    
+                    warn!(
+                        "Received retryable HTTP error: {} {}",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or("")
+                    );
+
                     // For 429, check for Retry-After header
                     if status == StatusCode::TOO_MANY_REQUESTS {
                         if let Some(retry_after) = res.headers().get("retry-after") {
                             if let Ok(retry_str) = retry_after.to_str() {
                                 if let Ok(retry_seconds) = retry_str.parse::<u64>() {
-                                    info!("Rate limited, waiting {} seconds before retry", retry_seconds);
+                                    info!(
+                                        "Rate limited, waiting {} seconds before retry",
+                                        retry_seconds
+                                    );
                                     tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
                                 }
                             }
@@ -264,8 +286,12 @@ impl Degiro {
                 }
                 // Don't retry client errors (4xx except 429)
                 _ => {
-                    error!("Received non-retryable HTTP error: {} {}", status.as_u16(), status.canonical_reason().unwrap_or(""));
-                    
+                    error!(
+                        "Received non-retryable HTTP error: {} {}",
+                        status.as_u16(),
+                        status.canonical_reason().unwrap_or("")
+                    );
+
                     // Try to parse error response
                     if let Ok(error_response) = res.json::<ApiErrorResponse>().await {
                         error!("API error response: {:?}", error_response);
@@ -276,7 +302,8 @@ impl Degiro {
                         "HTTP {} error: {}",
                         status.as_u16(),
                         err
-                    )).into());
+                    ))
+                    .into());
                 }
             }
         }

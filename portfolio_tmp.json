@@ -1,0 +1,834 @@
+[
+  {
+    "id": "19521056",
+    "position_type": "Product",
+    "size": "30",
+    "price": "15.4",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "446.061"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "281.2"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-446.2458"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "10.13",
+    "average_fx_rate": "0.918719",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-2.0012959"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "145.24947390"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "131.21332855856905103736833569"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "14.03614534143094896263166431"
+    },
+    "product": null
+  },
+  {
+    "id": "332087",
+    "position_type": "Product",
+    "size": "6",
+    "price": "916.27",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "5307.95211"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "4335.8508652440005"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-5310.151158"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "792.431666666667",
+    "average_fx_rate": "0.912729387617229",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "3.803153827"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "678.18531688122783841122476554"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "288.4199188978313863127652657"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "389.76539798339645209845949984"
+    },
+    "product": null
+  },
+  {
+    "id": "331830",
+    "position_type": "Product",
+    "size": "13",
+    "price": "402.7",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "5054.48905"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "5319.81"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-5056.58309"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "438.8769230769231",
+    "average_fx_rate": "0.931364974013216",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-6.000277265"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "-438.02094727841576420949220396"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-890.7477172656066584791041781"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "452.72676998719089426961197414"
+    },
+    "product": null
+  },
+  {
+    "id": "5067016",
+    "position_type": "Product",
+    "size": "100",
+    "price": "34.67",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "3347.3885"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2882.7086447674997"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-3348.7753"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "32.38868",
+    "average_fx_rate": "0.912916306496591",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "73.3811708631429"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0.725596159357143"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "208.26542283368029801200"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-80.8257721449677468952540778"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "288.3655988192909019072540778"
+    },
+    "product": null
+  },
+  {
+    "id": "332111",
+    "position_type": "Product",
+    "size": "15",
+    "price": "421.5",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "6104.37375"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "5138.890456087"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-6106.90275"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "384.7433333333333",
+    "average_fx_rate": "0.908106513733831",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "84.1989417346667"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "17.72950891333333"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "500.68452634714817590325686692"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-32.6465744595930831273999994"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "515.60159189340792903065686632"
+    },
+    "product": null
+  },
+  {
+    "id": "331856",
+    "position_type": "Product",
+    "size": "20",
+    "price": "569.63",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "10999.5553"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "9617.558740132561"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-11004.11234"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "518.44226",
+    "average_fx_rate": "0.92585327859264",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-2.884163493"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "-14.645253"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "947.8467380549524446720"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "193.368502152576009872157469"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "769.123488902376434799842531"
+    },
+    "product": null
+  },
+  {
+    "id": "4652071",
+    "position_type": "Product",
+    "size": "25",
+    "price": "166.67",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "4022.997125"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2928.492903437"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-4024.663825"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "124.03",
+    "average_fx_rate": "0.921750174857696",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-63.478175597"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "-6.89787315"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "982.58568639830393600"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "802.7690813321972619640641773"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "186.7144782161066740359358227"
+    },
+    "product": null
+  },
+  {
+    "id": "1821547",
+    "position_type": "Product",
+    "size": "4",
+    "price": "693.08",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "2676.67496"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2589.396268"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-2677.783888"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "699.78",
+    "average_fx_rate": "0.9261883",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "3.115926296"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "-24.821846440"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-249.8732192406231000758701011"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "225.0513728006231000758701011"
+    },
+    "product": null
+  },
+  {
+    "id": "6052398",
+    "position_type": "Product",
+    "size": "100",
+    "price": "35.68",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "3444.904"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2549.727408"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-3446.3312"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "28.25",
+    "average_fx_rate": "0.910482761430089",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "22.38639304"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "676.48869174255612700"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "465.2504261774358421441576268"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "211.2382655651202848558423732"
+    },
+    "product": null
+  },
+  {
+    "id": "1156196",
+    "position_type": "Product",
+    "size": "400",
+    "price": "35.58",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "13740.996"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "10211.707525"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-13746.6888"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "28.644625",
+    "average_fx_rate": "0.920756199598092",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "338.178896565"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "2554.315811115046921800000"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "1788.04360307177336674286884"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "766.27220804327355505713116"
+    },
+    "product": null
+  },
+  {
+    "id": "331953",
+    "position_type": "Product",
+    "size": "15",
+    "price": "212.44",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "3076.6623"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2661.3440335709997"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-3077.93694"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "190.475",
+    "average_fx_rate": "0.9280746",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-4.707314586"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "-5.01157746"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "305.7773788350"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "108.0489869672114720088234286"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "202.7399693277885279911765714"
+    },
+    "product": null
+  },
+  {
+    "id": "331952",
+    "position_type": "Product",
+    "size": "30",
+    "price": "239.78",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "6945.2277"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "5976.223976178"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-6948.10506"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "215.101",
+    "average_fx_rate": "0.925010863690081",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-7.10112246"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "684.850293150225269970"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "217.2332831493678405925932258"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "467.6170100008574293774067742"
+    },
+    "product": null
+  },
+  {
+    "id": "331969",
+    "position_type": "Product",
+    "size": "30",
+    "price": "219.39",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "6354.63135"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "4790.47"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-6357.26403"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "172.4183333333334",
+    "average_fx_rate": "0.924971387630859",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-6.00924891"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "1303.4234308800231099072247383"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "989.5810770044247343210689138"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "313.8423538755983755861558245"
+    },
+    "product": null
+  },
+  {
+    "id": "4836237",
+    "position_type": "Product",
+    "size": "100",
+    "price": "36.76",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "3549.178"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "3218.22"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-3550.6484"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "34.698",
+    "average_fx_rate": "0.925188415766038",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-8.001234975"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "190.773851330957035600"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-74.3712118218353800273481258"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "265.1450631527924156273481258"
+    },
+    "product": null
+  },
+  {
+    "id": "1156573",
+    "position_type": "Product",
+    "size": "12",
+    "price": "355.21",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "4115.46306"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "2965.788097028"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-4117.168068"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "268.0466666666666",
+    "average_fx_rate": "0.920613874477703",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "-4.578332938"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "962.9252881486989663710995822"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "768.5904719175907372362184844"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "194.3348162311082291348810978"
+    },
+    "product": null
+  },
+  {
+    "id": "5249449",
+    "position_type": "Product",
+    "size": "70",
+    "price": "84.79",
+    "currency": "EUR",
+    "value": {
+      "currency": "EUR",
+      "amount": "5730.53215"
+    },
+    "accrued_interest": null,
+    "base_value": {
+      "currency": "EUR",
+      "amount": "6071.1106354855"
+    },
+    "today_value": {
+      "currency": "EUR",
+      "amount": "-5732.90627"
+    },
+    "portfolio_value_correction": "0",
+    "break_even_price": "95.1993571428571",
+    "average_fx_rate": "0.9122602484932",
+    "realized_product_profit": {
+      "currency": "EUR",
+      "amount": "8.150608762"
+    },
+    "realized_fx_profit": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_product_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "today_realized_fx_pl": {
+      "currency": "EUR",
+      "amount": "0"
+    },
+    "total_profit": {
+      "currency": "EUR",
+      "amount": "-664.72299136580990921925452040"
+    },
+    "product_profit": {
+      "currency": "EUR",
+      "amount": "-1369.5836787605244524864020382"
+    },
+    "fx_profit": {
+      "currency": "EUR",
+      "amount": "704.86068739471454326714751780"
+    },
+    "product": null
+  }
+]

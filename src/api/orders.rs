@@ -1,7 +1,7 @@
 use bon::Builder;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derive_more::derive::From;
-use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use serde::Serialize;
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
     error::{ClientError, DataError, ResponseError},
     http::{HttpClient, HttpRequest},
     models::{Order, OrderTimeType, OrderType, Orders, Position, TransactionType},
-    paths::{UPDATE_DATA_PATH, TRADING_URL},
+    paths::{TRADING_URL, UPDATE_DATA_PATH},
 };
 
 impl Degiro {
@@ -22,10 +22,9 @@ impl Degiro {
     pub async fn orders(&self) -> Result<Orders, ClientError> {
         let url = self.build_trading_url(UPDATE_DATA_PATH)?;
 
-        let json = self.request_json(
-            HttpRequest::get(url)
-                .query("orders", "0")
-        ).await?;
+        let json = self
+            .request_json(HttpRequest::get(url).query("orders", "0"))
+            .await?;
 
         let orders = json
             .get("orders")
@@ -46,10 +45,10 @@ pub struct CreateOrderRequest {
     #[builder(into)]
     pub order_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub price: Option<Decimal>,
-    pub size: Decimal,
+    pub price: Option<f64>,
+    pub size: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_price: Option<Decimal>,
+    pub stop_price: Option<f64>,
     #[builder(into)]
     pub time_type: u8,
 }
@@ -61,7 +60,7 @@ impl From<Position> for CreateOrderRequest {
             transaction_type: TransactionType::Sell,
             order_type: OrderType::Market.into(),
             price: None,
-            size: position.size,
+            size: position.size.to_f64().unwrap_or(0.0),
             stop_price: None,
             time_type: OrderTimeType::Gtc.into(),
         }
@@ -78,13 +77,31 @@ impl Degiro {
 
         let url = format!("{TRADING_URL}/v5/checkOrder;jsessionid={session_id}");
 
-        let json = self.request_json(
-            HttpRequest::post(url)
-                .query("intAccount", int_account.to_string())
-                .query("sessionId", &session_id)
-                .json(&order)?
-        ).await?;
-        let order_id = json["data"]["confirmationId"]
+        let json = self
+            .request_json(
+                HttpRequest::post(url)
+                    .query("intAccount", int_account.to_string())
+                    .query("sessionId", &session_id)
+                    .json(&order)?,
+            )
+            .await?;
+
+        // Validate response before extracting confirmationId
+        let data = json["data"]
+            .as_object()
+            .ok_or_else(|| DataError::missing_field("data"))?;
+
+        // Check if order creation was successful
+        if let Some(status) = data.get("status") {
+            if status != "ok" && status != "success" {
+                return Err(ClientError::DataError(DataError::InvalidValue {
+                    field: "data.status",
+                    value: status.to_string(),
+                }));
+            }
+        }
+
+        let order_id = data["confirmationId"]
             .as_str()
             .ok_or_else(|| DataError::missing_field("data.confirmationId"))?;
         self.confirm_order(order_id, order).await
@@ -98,16 +115,15 @@ impl Degiro {
         let session_id = self.session_id();
         let int_account = self.int_account();
 
-        let url = format!(
-            "{TRADING_URL}v5/order/{order_id};jsessionid={session_id}"
-        );
+        let url = format!("{TRADING_URL}v5/order/{order_id};jsessionid={session_id}");
 
         self.request_json(
             HttpRequest::post(url)
                 .query("intAccount", int_account.to_string())
                 .query("sessionId", &session_id)
-                .json(&order)?
-        ).await
+                .json(&order)?,
+        )
+        .await
     }
 }
 
@@ -122,16 +138,16 @@ pub struct ModifyOrderRequest {
     pub transaction_type: TransactionType,
     pub order_type: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub price: Option<Decimal>,
-    pub size: Decimal,
+    pub price: Option<f64>,
+    pub size: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_price: Option<Decimal>,
+    pub stop_price: Option<f64>,
     #[builder(into)]
     pub time_type: u8,
 }
 
 impl ModifyOrderRequest {
-    pub fn stop_price(mut self, stop_price: Option<Decimal>) -> Self {
+    pub fn stop_price(mut self, stop_price: Option<f64>) -> Self {
         self.stop_price = stop_price;
         self
     }
@@ -181,7 +197,7 @@ impl OrderRequest {
             OrderRequest::Delete(req) => &req.id,
         }
     }
-    pub fn size(&self) -> Option<Decimal> {
+    pub fn size(&self) -> Option<f64> {
         match self {
             OrderRequest::Create(req) => Some(req.size),
             OrderRequest::Modify(req) => Some(req.size),
@@ -207,8 +223,9 @@ impl Degiro {
             HttpRequest::put(url)
                 .query("intAccount", int_account.to_string())
                 .query("sessionId", &session_id)
-                .json(&request)?
-        ).await
+                .json(&request)?,
+        )
+        .await
     }
 }
 
@@ -228,8 +245,9 @@ impl Degiro {
         self.request_json(
             HttpRequest::delete(url)
                 .query("intAccount", int_account.to_string())
-                .query("sessionId", &session_id)
-        ).await
+                .query("sessionId", &session_id),
+        )
+        .await
     }
 }
 
@@ -296,7 +314,11 @@ impl TryFrom<serde_json::Value> for Orders {
         value
             .as_array()
             .cloned()
-            .ok_or_else(|| ClientError::from(ResponseError::unexpected_structure("Expected array of orders")))?
+            .ok_or_else(|| {
+                ClientError::from(ResponseError::unexpected_structure(
+                    "Expected array of orders",
+                ))
+            })?
             .into_iter()
             .map(Order::try_from)
             .collect::<Result<Vec<_>, _>>()
@@ -306,12 +328,10 @@ impl TryFrom<serde_json::Value> for Orders {
 
 #[cfg(test)]
 mod test {
-    //! ⚠️  WARNING: This module contains DANGEROUS tests that can create, modify, 
-    //! or delete real orders on real trading accounts. Most dangerous tests are 
+    //! ⚠️  WARNING: This module contains DANGEROUS tests that can create, modify,
+    //! or delete real orders on real trading accounts. Most dangerous tests are
     //! commented out for safety. Only uncomment them in a controlled test environment
     //! with proper safeguards in place.
-
-    use rust_decimal_macros::dec;
 
     use crate::{
         client::Degiro,
@@ -323,9 +343,13 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_get_all_orders() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
 
         let orders = client.orders().await.expect("Failed to get orders");
         dbg!(orders);
@@ -337,12 +361,15 @@ mod test {
             .transaction_type(TransactionType::Buy)
             .order_type(OrderType::Market)
             .product_id("15850348")
-            .size(Decimal::ONE)
+            .size(1.0)
             .time_type(OrderTimeType::Gtc)
-            .stop_price(dec!(221.60))
+            .stop_price(221.60)
             .build();
 
-        println!("{}", serde_json::to_string_pretty(&req).expect("Failed to serialize order request to JSON"));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&req).expect("Failed to serialize order request to JSON")
+        );
     }
     // DANGEROUS TEST COMMENTED OUT - MODIFIES REAL ORDERS
     // #[tokio::test]
@@ -357,7 +384,7 @@ mod test {
     //         .await
     //         .unwrap()
     //         .expect("order must exist");
-    //     let req = ModifyOrderRequest::from(order).stop_price(Some(dec!(397)));
+    //     let req = ModifyOrderRequest::from(order).stop_price(Some(397.0));
     //     let json = serde_json::to_string_pretty(&req).unwrap();
     //     println!("{json}");
     //     // dbg!(&req);
@@ -395,7 +422,7 @@ mod test {
     //         .order_type(OrderType::Market)
     //         .transaction_type(TransactionType::Sell)
     //         .product_id("332087")
-    //         .size(dec!(6.0))
+    //         .size(6.0)
     //         .time_type(OrderTimeType::Gtc)
     //         .build();
     //

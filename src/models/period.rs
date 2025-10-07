@@ -51,7 +51,10 @@ impl Period {
     }
 
     /// Add this period to a DateTime<Utc>
-    pub fn add_to_datetime(&self, datetime: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    pub fn add_to_datetime(
+        &self,
+        datetime: chrono::DateTime<chrono::Utc>,
+    ) -> chrono::DateTime<chrono::Utc> {
         match self {
             Period::PT1S => datetime + chrono::Duration::seconds(1),
             Period::PT1M => datetime + chrono::Duration::minutes(1),
@@ -69,7 +72,10 @@ impl Period {
     }
 
     /// Subtract this period from a DateTime<Utc>
-    pub fn subtract_from_datetime(&self, datetime: chrono::DateTime<chrono::Utc>) -> chrono::DateTime<chrono::Utc> {
+    pub fn subtract_from_datetime(
+        &self,
+        datetime: chrono::DateTime<chrono::Utc>,
+    ) -> chrono::DateTime<chrono::Utc> {
         match self {
             Period::PT1S => datetime - chrono::Duration::seconds(1),
             Period::PT1M => datetime - chrono::Duration::minutes(1),
@@ -141,7 +147,10 @@ impl Period {
     }
 
     /// Subtract this period from a NaiveDateTime
-    pub fn subtract_from_datetime_naive(&self, datetime: chrono::NaiveDateTime) -> chrono::NaiveDateTime {
+    pub fn subtract_from_datetime_naive(
+        &self,
+        datetime: chrono::NaiveDateTime,
+    ) -> chrono::NaiveDateTime {
         match self {
             Period::PT1S => datetime - chrono::Duration::seconds(1),
             Period::PT1M => datetime - chrono::Duration::minutes(1),
@@ -214,7 +223,10 @@ mod tests {
     fn test_sub_period_from_date() {
         let today = chrono::Utc::now().date_naive();
         let one_month_earlier = Period::P1M.subtract_from_date(today);
-        assert_eq!(one_month_earlier, chronoutil::delta::shift_months(today, -1));
+        assert_eq!(
+            one_month_earlier,
+            chronoutil::delta::shift_months(today, -1)
+        );
     }
 
     #[test]

@@ -1,10 +1,10 @@
 use chrono::{DateTime, Utc};
 
-use crate::models::CuratedLists;
-use crate::paths::{BASE_API_URL, CURATED_LISTS_PATH};
 use crate::client::Degiro;
 use crate::error::{ClientError, ResponseError};
 use crate::http::{HttpClient, HttpRequest};
+use crate::models::CuratedLists;
+use crate::paths::{BASE_API_URL, CURATED_LISTS_PATH};
 
 impl Degiro {
     pub async fn curated_lists_by_country(
@@ -12,13 +12,15 @@ impl Degiro {
         country: impl AsRef<str>,
     ) -> Result<Option<CuratedLists>, ClientError> {
         let url = format!("{}{}{}", BASE_API_URL, CURATED_LISTS_PATH, country.as_ref());
-        
-        let json = self.request_json(
-            HttpRequest::get(url)
-                .query("intAccount", self.int_account().to_string())
-                .query("sessionId", self.session_id())
-                .header("Content-Type", "application/json")
-        ).await?;
+
+        let json = self
+            .request_json(
+                HttpRequest::get(url)
+                    .query("intAccount", self.int_account().to_string())
+                    .query("sessionId", self.session_id())
+                    .header("Content-Type", "application/json"),
+            )
+            .await?;
         dbg!(&json);
         let mut list = CuratedLists::default();
 
@@ -50,7 +52,10 @@ impl Degiro {
                     "LARGEST_WORLD_ETFS" => list.largest_world_etfs = ids,
                     "MOST_HELD" => list.most_held = ids,
                     _ => {
-                        return Err(ClientError::ResponseError(ResponseError::unknown_value("list type", list_type)))
+                        return Err(ClientError::ResponseError(ResponseError::unknown_value(
+                            "list type",
+                            list_type,
+                        )))
                     }
                 }
             }
@@ -67,9 +72,16 @@ mod tests {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_curated_lists_by_country() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
-        client.curated_lists_by_country("GB").await.expect("Failed to get curated lists");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
+        client
+            .curated_lists_by_country("GB")
+            .await
+            .expect("Failed to get curated lists");
     }
 }

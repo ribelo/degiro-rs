@@ -1,40 +1,55 @@
 use futures_concurrency::prelude::*;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 
 use crate::{
     client::Degiro,
     error::{ClientError, DataError, ResponseError},
     http::{HttpClient, HttpRequest},
-    models::{Portfolio, PortfolioObject, Position},
-    paths::{UPDATE_DATA_PATH},
+    models::{Portfolio, PortfolioObject, Position, PositionType},
+    paths::UPDATE_DATA_PATH,
 };
 
 impl Degiro {
     pub async fn portfolio(&self, fetch_products: bool) -> Result<Portfolio, ClientError> {
         let url = self.build_trading_url(UPDATE_DATA_PATH)?;
-        
-        let res = self.request_json(
-            HttpRequest::get(url)
-                .query("portfolio", "0")
-        ).await?;
-        
+
+        let res = self
+            .request_json(HttpRequest::get(url).query("portfolio", "0"))
+            .await?;
+
         let body = res
             .get("portfolio")
             .and_then(|p| p.get("value"))
-            .ok_or_else(|| ClientError::ResponseError(ResponseError::invalid("Missing portfolio.value in response")))?;
+            .ok_or_else(|| {
+                ClientError::ResponseError(ResponseError::invalid(
+                    "Missing portfolio.value in response",
+                ))
+            })?;
         let objs: Vec<PortfolioObject> = serde_json::from_value(body.clone())?;
         let mut positions = Vec::with_capacity(objs.len());
 
         let mut position_futures = Vec::new();
+        let min_position_size = Decimal::from_f64(1e-6).unwrap_or(Decimal::ZERO);
         for obj in objs {
             let position: Position = obj.try_into().map_err(|e| {
-                ClientError::DataError(DataError::parse_error("position", format!("Failed to parse position: {e}")))
+                ClientError::DataError(DataError::parse_error(
+                    "position",
+                    format!("Failed to parse position: {e}"),
+                ))
             })?;
 
-            if fetch_products && position.position_type == crate::models::PositionType::Product {
+            if position.size.abs() < min_position_size {
+                continue;
+            }
+
+            if fetch_products && position.position_type == PositionType::Product {
+                let id = position.id.clone();
                 position_futures.push(async move {
-                    let product = self.product(&position.id).await?;
-                    Ok::<(Position, Option<crate::models::Product>), ClientError>((position, product))
+                    let product = self.product(&id).await?;
+                    Ok::<(Position, Option<crate::models::Product>), ClientError>((
+                        position, product,
+                    ))
                 });
             } else {
                 positions.push(position);
@@ -66,17 +81,23 @@ impl Degiro {
 
 #[cfg(test)]
 mod test {
-    use rust_decimal_macros::dec;
 
     use crate::client::Degiro;
+    use rust_decimal::Decimal;
 
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_current_portfolio() {
         let client = Degiro::load_from_env().expect("Failed to load client from env");
         client.login().await.expect("Failed to login");
-        client.account_config().await.expect("Failed to get account config");
-        let xs = client.portfolio(false).await.expect("Failed to get portfolio");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account config");
+        let xs = client
+            .portfolio(false)
+            .await
+            .expect("Failed to get portfolio");
         let xs = xs.current().products();
         std::fs::write(
             "portfolio_tmp.json",
@@ -92,12 +113,18 @@ mod test {
     async fn test_total_portfolio() {
         let client = Degiro::load_from_env().expect("Failed to load client from env");
         client.login().await.expect("Failed to login");
-        client.account_config().await.expect("Failed to get account config");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account config");
 
-        let total = client.total_portfolio_value().await.expect("Failed to get total portfolio value");
+        let total = client
+            .total_portfolio_value()
+            .await
+            .expect("Failed to get total portfolio value");
         dbg!(&total);
         assert!(
-            total >= dec!(0.0),
+            total >= Decimal::ZERO,
             "Total portfolio value should not be negative"
         );
     }

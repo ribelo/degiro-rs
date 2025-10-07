@@ -4,6 +4,7 @@ pub mod error;
 pub mod http;
 pub mod models;
 pub mod paths;
+pub mod serde_utils;
 pub mod session;
 
 pub mod prelude {

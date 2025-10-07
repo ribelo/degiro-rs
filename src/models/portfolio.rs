@@ -297,7 +297,7 @@ impl TryFrom<PortfolioObject> for Position {
 
     fn try_from(obj: PortfolioObject) -> Result<Self, Self::Error> {
         let mut position = Position::default();
-        let mut value = 0.0;
+        let mut value = Decimal::ZERO;
         for row in &obj.value {
             match row.elem_type {
                 ElemType::Id => {
@@ -338,6 +338,7 @@ impl TryFrom<PortfolioObject> for Position {
                         .value
                         .as_ref()
                         .and_then(|v| v.as_f64())
+                        .and_then(Decimal::from_f64)
                         .ok_or(ParsePositionError::MissingField("value"))?;
                 }
                 ElemType::AccruedInterest => {
@@ -460,10 +461,7 @@ impl TryFrom<PortfolioObject> for Position {
                 - (position.break_even_price * position.size) / position.average_fx_rate
         };
         position.product_profit = Money::new(currency, profit);
-        position.value = Money::new(
-            currency,
-            Decimal::try_from(value).map_err(|_| ParsePositionError::ValueConversion)?,
-        );
+        position.value = Money::new(currency, value);
         position.fx_profit = match position.total_profit.sub(position.product_profit) {
             Ok(total_minus_product) => match total_minus_product.sub(position.realized_fx_profit) {
                 Ok(result) => result,

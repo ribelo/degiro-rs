@@ -1,311 +1,310 @@
 use std::str::FromStr;
 
 use chrono::NaiveDateTime;
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyRatios {
     pub isin: String,
     pub current_ratios: CurrentRatios,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CurrentRatios {
     pub currency: String,
     pub price_currency: String,
     /// Price - closing or last bid
-    pub current_price: ItemDetail<Decimal>,
+    pub current_price: ItemDetail<f64>,
     /// Price - 12 month high
-    pub high_12m: ItemDetail<Decimal>,
+    pub high_12m: ItemDetail<f64>,
     /// Price - 12 month low
-    pub low_12m: ItemDetail<Decimal>,
+    pub low_12m: ItemDetail<f64>,
     /// Pricing date
     pub pricing_date: ItemDetail<NaiveDateTime>,
     /// Volume - avg. trading volume for the last ten days
-    pub volume_avg_10d: ItemDetail<Decimal>,
+    pub volume_avg_10d: ItemDetail<f64>,
     /// Market capitalization
-    pub market_cap: ItemDetail<Decimal>,
+    pub market_cap: ItemDetail<f64>,
     /// 12 Month High price date
     pub high_date_12m: ItemDetail<NaiveDateTime>,
     /// 12 Month Low price date
     pub low_date_12m: ItemDetail<NaiveDateTime>,
     /// Volume - avg. trading volume for the last 3 months
-    pub volume_avg_3m: ItemDetail<Decimal>,
+    pub volume_avg_3m: ItemDetail<f64>,
     /// Beta
-    pub beta: ItemDetail<Decimal>,
+    pub beta: ItemDetail<f64>,
     /// Price - 1 Day % Change
-    pub price_change_1d: ItemDetail<Decimal>,
+    pub price_change_1d: ItemDetail<f64>,
     /// Price - 13 week price percent change
-    pub price_change_13w: ItemDetail<Decimal>,
+    pub price_change_13w: ItemDetail<f64>,
     /// Price - 26 week price percent change
-    pub price_change_26w: ItemDetail<Decimal>,
+    pub price_change_26w: ItemDetail<f64>,
     /// Price - 5 Day % Change
-    pub price_change_5d: ItemDetail<Decimal>,
+    pub price_change_5d: ItemDetail<f64>,
     /// Price - 52 week price percent change
-    pub price_change_52w: ItemDetail<Decimal>,
+    pub price_change_52w: ItemDetail<f64>,
     /// Price - YTD price percent change
-    pub price_change_ytd: ItemDetail<Decimal>,
+    pub price_change_ytd: ItemDetail<f64>,
     /// Price % Change Month To Date
-    pub price_change_mtd: ItemDetail<Decimal>,
+    pub price_change_mtd: ItemDetail<f64>,
     /// Relative (S&P500) price percent change - 04 week
-    pub relative_price_change_4w: ItemDetail<Decimal>,
+    pub relative_price_change_4w: ItemDetail<f64>,
     /// Relative (S&P500) price percent change - 13 week
-    pub relative_price_change_13w: ItemDetail<Decimal>,
+    pub relative_price_change_13w: ItemDetail<f64>,
     /// Relative (S&P500) price percent change - 26 week
-    pub relative_price_change_26w: ItemDetail<Decimal>,
+    pub relative_price_change_26w: ItemDetail<f64>,
     /// Relative (S&P500) price percent change - 52 week
-    pub relative_price_change_52w: ItemDetail<Decimal>,
+    pub relative_price_change_52w: ItemDetail<f64>,
     /// Relative (S&P500) price percent change - Year to Date
-    pub relative_price_change_ytd: ItemDetail<Decimal>,
+    pub relative_price_change_ytd: ItemDetail<f64>,
     /// EPS excluding extraordinary items - most recent fiscal year
-    pub eps_excluding_extraordinary_items_annual: ItemDetail<Decimal>,
+    pub eps_excluding_extraordinary_items_annual: ItemDetail<f64>,
     /// EPS excluding extraordinary items - trailing 12 month
-    pub eps_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub eps_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// EPS Normalized - most recent fiscal year
-    pub eps_normalized_annual: ItemDetail<Decimal>,
+    pub eps_normalized_annual: ItemDetail<f64>,
     /// Revenue/share - most recent fiscal year
-    pub revenue_per_share_annual: ItemDetail<Decimal>,
+    pub revenue_per_share_annual: ItemDetail<f64>,
     /// Revenue/share - trailing 12 month
-    pub revenue_per_share_ttm: ItemDetail<Decimal>,
+    pub revenue_per_share_ttm: ItemDetail<f64>,
     /// Book value (Total Equity) per share - most recent fiscal year
-    pub book_value_per_share_annual: ItemDetail<Decimal>,
+    pub book_value_per_share_annual: ItemDetail<f64>,
     /// Book value (Total Equity) per share - most recent quarter
-    pub book_value_per_share_quarterly: ItemDetail<Decimal>,
+    pub book_value_per_share_quarterly: ItemDetail<f64>,
     /// Book value (tangible) per share - most recent fiscal year
-    pub tangible_book_value_per_share_annual: ItemDetail<Decimal>,
+    pub tangible_book_value_per_share_annual: ItemDetail<f64>,
     /// Book value (tangible) per share - most recent quarter
-    pub tangible_book_value_per_share_quarterly: ItemDetail<Decimal>,
+    pub tangible_book_value_per_share_quarterly: ItemDetail<f64>,
     /// Cash per share - most recent fiscal year
-    pub cash_per_share_annual: ItemDetail<Decimal>,
+    pub cash_per_share_annual: ItemDetail<f64>,
     /// Cash per share - most recent quarter
-    pub cash_per_share_quarterly: ItemDetail<Decimal>,
+    pub cash_per_share_quarterly: ItemDetail<f64>,
     /// Cash Flow per share - most recent fiscal year
-    pub cash_flow_per_share_annual: ItemDetail<Decimal>,
+    pub cash_flow_per_share_annual: ItemDetail<f64>,
     /// Cash Flow per share - trailing 12 month
-    pub cash_flow_per_share_ttm: ItemDetail<Decimal>,
+    pub cash_flow_per_share_ttm: ItemDetail<f64>,
     /// Dividend per share - most recent fiscal year
-    pub dividend_per_share_annual: ItemDetail<Decimal>,
+    pub dividend_per_share_annual: ItemDetail<f64>,
     /// Dividends per share - trailing 12 month
-    pub dividend_per_share_ttm: ItemDetail<Decimal>,
+    pub dividend_per_share_ttm: ItemDetail<f64>,
     /// EBITD per share - trailing 12 month
-    pub ebitd_per_share_ttm: ItemDetail<Decimal>,
+    pub ebitd_per_share_ttm: ItemDetail<f64>,
     /// ABEPSXCLXO
-    pub abepsxclxo: ItemDetail<Decimal>,
+    pub abepsxclxo: ItemDetail<f64>,
     /// EPS Basic excluding extraordinary items - trailing 12 month
-    pub eps_basic_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub eps_basic_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// EPS including extraordinary items - most recent fiscal year
-    pub eps_including_extraordinary_items_annual: ItemDetail<Decimal>,
+    pub eps_including_extraordinary_items_annual: ItemDetail<f64>,
     /// EPS including extraordinary items - trailing 12 month
-    pub eps_including_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub eps_including_extraordinary_items_ttm: ItemDetail<f64>,
     /// Free Cash Flow per share - trailing 12 month
-    pub free_cash_flow_per_share_ttm: ItemDetail<Decimal>,
+    pub free_cash_flow_per_share_ttm: ItemDetail<f64>,
     /// Dividend Per Share - 5 year average
-    pub dividend_per_share_5yr_avg: ItemDetail<Decimal>,
+    pub dividend_per_share_5yr_avg: ItemDetail<f64>,
     /// P/E excluding extraordinary items, most recent fiscal year
-    pub pe_excluding_extraordinary_items_annual: ItemDetail<Decimal>,
+    pub pe_excluding_extraordinary_items_annual: ItemDetail<f64>,
     /// P/E excluding extraordinary items - TTM
-    pub pe_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub pe_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// P/E Normalized, most recent fiscal year
-    pub pe_normalized_annual: ItemDetail<Decimal>,
+    pub pe_normalized_annual: ItemDetail<f64>,
     /// Price to sales - most recent fiscal year
-    pub price_to_sales_annual: ItemDetail<Decimal>,
+    pub price_to_sales_annual: ItemDetail<f64>,
     /// Price to sales - trailing 12 month
-    pub price_to_sales_ttm: ItemDetail<Decimal>,
+    pub price_to_sales_ttm: ItemDetail<f64>,
     /// Price to Tangible Book - most fiscal year
-    pub price_to_tangible_book_annual: ItemDetail<Decimal>,
+    pub price_to_tangible_book_annual: ItemDetail<f64>,
     /// Price to Tangible Book - most recent quarter
-    pub price_to_tangible_book_quarterly: ItemDetail<Decimal>,
+    pub price_to_tangible_book_quarterly: ItemDetail<f64>,
     /// Price to Free Cash Flow per Share - most recent fiscal year
-    pub price_to_free_cash_flow_per_share_annual: ItemDetail<Decimal>,
+    pub price_to_free_cash_flow_per_share_annual: ItemDetail<f64>,
     /// Price to Cash Flow per share - trailing 12 month
-    pub price_to_cash_flow_per_share_ttm: ItemDetail<Decimal>,
+    pub price_to_cash_flow_per_share_ttm: ItemDetail<f64>,
     /// Price to Free Cash Flow per Share - trailing 12 months
-    pub price_to_free_cash_flow_per_share_ttm: ItemDetail<Decimal>,
+    pub price_to_free_cash_flow_per_share_ttm: ItemDetail<f64>,
     /// Price to Book - most recent fiscal year
-    pub price_to_book_annual: ItemDetail<Decimal>,
+    pub price_to_book_annual: ItemDetail<f64>,
     /// Price to Book - most recent quarter
-    pub price_to_book_quarterly: ItemDetail<Decimal>,
+    pub price_to_book_quarterly: ItemDetail<f64>,
     /// P/E Basic excluding extraordinary items - TTM
-    pub pe_basic_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub pe_basic_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// P/E excluding extraordinary items high, trailing 12 months
-    pub pe_high_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub pe_high_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// P/E excluding extraordinary items low, trailing 12 months
-    pub pe_low_excluding_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub pe_low_excluding_extraordinary_items_ttm: ItemDetail<f64>,
     /// P/E including extraordinary items - TTM
-    pub pe_including_extraordinary_items_ttm: ItemDetail<Decimal>,
+    pub pe_including_extraordinary_items_ttm: ItemDetail<f64>,
     /// Net Debt, LFI
-    pub net_debt_lfi: ItemDetail<Decimal>,
+    pub net_debt_lfi: ItemDetail<f64>,
     /// Net Debt, LFY
-    pub net_debt_lfy: ItemDetail<Decimal>,
+    pub net_debt_lfy: ItemDetail<f64>,
     /// Dividend Yield - 5 Year Average
-    pub dividend_yield_5yr_avg: ItemDetail<Decimal>,
+    pub dividend_yield_5yr_avg: ItemDetail<f64>,
     /// Dividend Yield - indicated annual dividend divided by closing price
-    pub dividend_yield: ItemDetail<Decimal>,
+    pub dividend_yield: ItemDetail<f64>,
     /// Current Dividend Yield - Common Stock Primary Issue, LTM
-    pub current_dividend_yield_ttm: ItemDetail<Decimal>,
+    pub current_dividend_yield_ttm: ItemDetail<f64>,
     /// Current ratio - most recent fiscal year
-    pub current_ratio_annual: ItemDetail<Decimal>,
+    pub current_ratio_annual: ItemDetail<f64>,
     /// Current ratio - most recent quarter
-    pub current_ratio_quarterly: ItemDetail<Decimal>,
+    pub current_ratio_quarterly: ItemDetail<f64>,
     /// Quick ratio - most recent fiscal year
-    pub quick_ratio_annual: ItemDetail<Decimal>,
+    pub quick_ratio_annual: ItemDetail<f64>,
     /// Quick ratio - most recent quarter
-    pub quick_ratio_quarterly: ItemDetail<Decimal>,
+    pub quick_ratio_quarterly: ItemDetail<f64>,
     /// LT debt/equity - most recent fiscal year
-    pub long_term_debt_to_equity_annual: ItemDetail<Decimal>,
+    pub long_term_debt_to_equity_annual: ItemDetail<f64>,
     /// LT debt/equity - most recent quarter
-    pub long_term_debt_to_equity_quarterly: ItemDetail<Decimal>,
+    pub long_term_debt_to_equity_quarterly: ItemDetail<f64>,
     /// Total debt/total equity - most recent fiscal year
-    pub total_debt_to_equity_annual: ItemDetail<Decimal>,
+    pub total_debt_to_equity_annual: ItemDetail<f64>,
     /// Total debt/total equity - most recent quarter
-    pub total_debt_to_equity_quarterly: ItemDetail<Decimal>,
+    pub total_debt_to_equity_quarterly: ItemDetail<f64>,
     /// Payout ratio - most recent fiscal year
-    pub payout_ratio_annual: ItemDetail<Decimal>,
+    pub payout_ratio_annual: ItemDetail<f64>,
     /// Payout ratio - trailing 12 month
-    pub payout_ratio_ttm: ItemDetail<Decimal>,
+    pub payout_ratio_ttm: ItemDetail<f64>,
     /// Current EV/Free Cash Flow, LFY
-    pub ev_to_free_cash_flow_current_annual: ItemDetail<Decimal>,
+    pub ev_to_free_cash_flow_current_annual: ItemDetail<f64>,
     /// Current EV/Free Cash Flow, LTM
-    pub ev_to_free_cash_flow_current_ttm: ItemDetail<Decimal>,
+    pub ev_to_free_cash_flow_current_ttm: ItemDetail<f64>,
     /// Interest coverage - most recent fiscal year
-    pub interest_coverage_annual: ItemDetail<Decimal>,
+    pub interest_coverage_annual: ItemDetail<f64>,
     /// Interest coverage - trailing 12 month
-    pub interest_coverage_ttm: ItemDetail<Decimal>,
+    pub interest_coverage_ttm: ItemDetail<f64>,
     /// Free Cash Flow - 1st historical fiscal year
-    pub free_cash_flow_historical_annual: ItemDetail<Decimal>,
+    pub free_cash_flow_historical_annual: ItemDetail<f64>,
     /// Free Cash Flow - trailing 12 month
-    pub free_cash_flow_ttm: ItemDetail<Decimal>,
+    pub free_cash_flow_ttm: ItemDetail<f64>,
     /// Revenue - most recent fiscal year
-    pub revenue_annual: ItemDetail<Decimal>,
+    pub revenue_annual: ItemDetail<f64>,
     /// Revenue - trailing 12 month
-    pub revenue_ttm: ItemDetail<Decimal>,
+    pub revenue_ttm: ItemDetail<f64>,
     /// EBITD - most recent fiscal year
-    pub ebitd_annual: ItemDetail<Decimal>,
+    pub ebitd_annual: ItemDetail<f64>,
     /// EBITD - trailing 12 month
-    pub ebitd_ttm: ItemDetail<Decimal>,
+    pub ebitd_ttm: ItemDetail<f64>,
     /// Earnings before taxes - most recent fiscal year
-    pub earnings_before_taxes_annual: ItemDetail<Decimal>,
+    pub earnings_before_taxes_annual: ItemDetail<f64>,
     /// Earnings before taxes - trailing 12 month
-    pub earnings_before_taxes_ttm: ItemDetail<Decimal>,
+    pub earnings_before_taxes_ttm: ItemDetail<f64>,
     /// Net Income available to common - most recent fiscal year
-    pub net_income_to_common_annual: ItemDetail<Decimal>,
+    pub net_income_to_common_annual: ItemDetail<f64>,
     /// Net Income available to common - trailing 12 months
-    pub net_income_to_common_ttm: ItemDetail<Decimal>,
+    pub net_income_to_common_ttm: ItemDetail<f64>,
     /// Earnings before taxes Normalized - most recent fiscal year
-    pub normalized_earnings_before_taxes_annual: ItemDetail<Decimal>,
+    pub normalized_earnings_before_taxes_annual: ItemDetail<f64>,
     /// Net Income Available to Common, Normalized - most recent fiscal year
-    pub normalized_net_income_to_common_annual: ItemDetail<Decimal>,
+    pub normalized_net_income_to_common_annual: ItemDetail<f64>,
     /// Earnings per Share, Normalized, Excluding Extraordinary Items, Avg. Diluted Shares Outstanding, TTM
-    pub normalized_eps_excluding_extraordinary_ttm: ItemDetail<Decimal>,
+    pub normalized_eps_excluding_extraordinary_ttm: ItemDetail<f64>,
     /// Gross Margin - 1st historical fiscal year
-    pub gross_margin_first_historical_year: ItemDetail<Decimal>,
+    pub gross_margin_first_historical_year: ItemDetail<f64>,
     /// Gross Margin - trailing 12 month
-    pub gross_margin_ttm: ItemDetail<Decimal>,
+    pub gross_margin_ttm: ItemDetail<f64>,
     /// Net Profit Margin % - 1st historical fiscal year
-    pub net_profit_margin_first_historical_year: ItemDetail<Decimal>,
+    pub net_profit_margin_first_historical_year: ItemDetail<f64>,
     /// Net Profit Margin % - trailing 12 month
-    pub net_profit_margin_ttm: ItemDetail<Decimal>,
+    pub net_profit_margin_ttm: ItemDetail<f64>,
     /// Operating margin - 1st historical fiscal year
-    pub operating_margin_first_historical_year: ItemDetail<Decimal>,
+    pub operating_margin_first_historical_year: ItemDetail<f64>,
     /// Operating margin - trailing 12 month
-    pub operating_margin_ttm: ItemDetail<Decimal>,
+    pub operating_margin_ttm: ItemDetail<f64>,
     /// Pretax margin - trailing 12 month
-    pub pretax_margin_ttm: ItemDetail<Decimal>,
+    pub pretax_margin_ttm: ItemDetail<f64>,
     /// Pretax margin - 1st historical fiscal year
-    pub pretax_margin_first_historical_year: ItemDetail<Decimal>,
+    pub pretax_margin_first_historical_year: ItemDetail<f64>,
     /// Operating Margin - 5 year average
-    pub operating_margin_5yr_avg: ItemDetail<Decimal>,
+    pub operating_margin_5yr_avg: ItemDetail<f64>,
     /// Pretax Margin - 5 year average
-    pub pretax_margin_5yr_avg: ItemDetail<Decimal>,
+    pub pretax_margin_5yr_avg: ItemDetail<f64>,
     /// Free Operating Cash Flow/Revenue, 5 Year Average
-    pub free_operating_cash_flow_to_revenue_5yr_avg: ItemDetail<Decimal>,
+    pub free_operating_cash_flow_to_revenue_5yr_avg: ItemDetail<f64>,
     /// Free Operating Cash Flow/Revenue, TTM
-    pub free_operating_cash_flow_to_revenue_ttm: ItemDetail<Decimal>,
+    pub free_operating_cash_flow_to_revenue_ttm: ItemDetail<f64>,
     /// Gross Margin - 5 year average
-    pub gross_margin_5yr_avg: ItemDetail<Decimal>,
+    pub gross_margin_5yr_avg: ItemDetail<f64>,
     /// Net Profit Margin - 5 year average
-    pub net_profit_margin_5yr_avg: ItemDetail<Decimal>,
+    pub net_profit_margin_5yr_avg: ItemDetail<f64>,
     /// Return on average assets - most recent fiscal year
-    pub return_on_average_assets_annual: ItemDetail<Decimal>,
+    pub return_on_average_assets_annual: ItemDetail<f64>,
     /// Return on average assets - trailing 12 month
-    pub return_on_average_assets_ttm: ItemDetail<Decimal>,
+    pub return_on_average_assets_ttm: ItemDetail<f64>,
     /// Return on average equity - most recent fiscal year
-    pub return_on_average_equity_annual: ItemDetail<Decimal>,
+    pub return_on_average_equity_annual: ItemDetail<f64>,
     /// Return on average equity - trailing 12 month
-    pub return_on_average_equity_ttm: ItemDetail<Decimal>,
+    pub return_on_average_equity_ttm: ItemDetail<f64>,
     /// Return on investment - most recent fiscal year
-    pub return_on_investment_annual: ItemDetail<Decimal>,
+    pub return_on_investment_annual: ItemDetail<f64>,
     /// Return on investment - trailing 12 month
-    pub return_on_investment_ttm: ItemDetail<Decimal>,
+    pub return_on_investment_ttm: ItemDetail<f64>,
     /// Return on average assets - 5 year average
-    pub return_on_average_assets_5yr_avg: ItemDetail<Decimal>,
+    pub return_on_average_assets_5yr_avg: ItemDetail<f64>,
     /// Return on average equity - 5 year average
-    pub return_on_average_equity_5yr_avg: ItemDetail<Decimal>,
+    pub return_on_average_equity_5yr_avg: ItemDetail<f64>,
     /// Return on investment - 5 year average
-    pub return_on_investment_5yr_avg: ItemDetail<Decimal>,
+    pub return_on_investment_5yr_avg: ItemDetail<f64>,
     /// Asset turnover - most recent fiscal year
-    pub asset_turnover_annual: ItemDetail<Decimal>,
+    pub asset_turnover_annual: ItemDetail<f64>,
     /// Asset turnover - trailing 12 month
-    pub asset_turnover_ttm: ItemDetail<Decimal>,
+    pub asset_turnover_ttm: ItemDetail<f64>,
     /// Inventory turnover - most recent fiscal year
-    pub inventory_turnover_annual: ItemDetail<Decimal>,
+    pub inventory_turnover_annual: ItemDetail<f64>,
     /// Inventory turnover - trailing 12 month
-    pub inventory_turnover_ttm: ItemDetail<Decimal>,
+    pub inventory_turnover_ttm: ItemDetail<f64>,
     /// Net Income per employee - most recent fiscal year
-    pub net_income_per_employee_annual: ItemDetail<Decimal>,
+    pub net_income_per_employee_annual: ItemDetail<f64>,
     /// Net Income per employee - trailing 12 month
-    pub net_income_per_employee_ttm: ItemDetail<Decimal>,
+    pub net_income_per_employee_ttm: ItemDetail<f64>,
     /// Receivables turnover - most recent fiscal year
-    pub receivables_turnover_annual: ItemDetail<Decimal>,
+    pub receivables_turnover_annual: ItemDetail<f64>,
     /// Receivables turnover - trailing 12 month
-    pub receivables_turnover_ttm: ItemDetail<Decimal>,
+    pub receivables_turnover_ttm: ItemDetail<f64>,
     /// Revenue per employee - most recent fiscal year
-    pub revenue_per_employee_annual: ItemDetail<Decimal>,
+    pub revenue_per_employee_annual: ItemDetail<f64>,
     /// Revenue per employee - trailing 12 month
-    pub revenue_per_employee_ttm: ItemDetail<Decimal>,
+    pub revenue_per_employee_ttm: ItemDetail<f64>,
     /// Revenue Change % - most recent quarter 1 year ago
-    pub revenue_change_percent_last_quarter_year_ago: ItemDetail<Decimal>,
+    pub revenue_change_percent_last_quarter_year_ago: ItemDetail<f64>,
     /// Revenue growth rate, 5 year
-    pub revenue_growth_rate_5_year: ItemDetail<Decimal>,
+    pub revenue_growth_rate_5_year: ItemDetail<f64>,
     /// EPS Change % - most recent quarter 1 year ago
-    pub eps_change_percent_last_quarter_year_ago: ItemDetail<Decimal>,
+    pub eps_change_percent_last_quarter_year_ago: ItemDetail<f64>,
     /// EPS Change %, TTM over TTM
-    pub eps_change_percent_ttm_over_ttm: ItemDetail<Decimal>,
+    pub eps_change_percent_ttm_over_ttm: ItemDetail<f64>,
     /// EPS growth rate, 5 year
-    pub eps_growth_rate_5_year: ItemDetail<Decimal>,
+    pub eps_growth_rate_5_year: ItemDetail<f64>,
     /// Growth rate% - dividend, 3 year
-    pub dividend_growth_rate_3_year: ItemDetail<Decimal>,
+    pub dividend_growth_rate_3_year: ItemDetail<f64>,
     /// Revenue Change %, TTM over TTM
-    pub revenue_change_percent_ttm_over_ttm: ItemDetail<Decimal>,
+    pub revenue_change_percent_ttm_over_ttm: ItemDetail<f64>,
     /// Revenue/share (5 yr growth)
-    pub revenue_per_share_5_year_growth: ItemDetail<Decimal>,
+    pub revenue_per_share_5_year_growth: ItemDetail<f64>,
     /// Growth rate% - Revenue, 3 year
-    pub revenue_growth_rate_3_year: ItemDetail<Decimal>,
+    pub revenue_growth_rate_3_year: ItemDetail<f64>,
     /// Growth rate% - EPS, 3 year
-    pub eps_growth_rate_3_year: ItemDetail<Decimal>,
+    pub eps_growth_rate_3_year: ItemDetail<f64>,
     /// Book value per share growth rate, 5 year
-    pub book_value_per_share_growth_rate_5_year: ItemDetail<Decimal>,
+    pub book_value_per_share_growth_rate_5_year: ItemDetail<f64>,
     /// Tangible Book Value, Total Equity, 5 Year CAGR
-    pub tangible_book_value_total_equity_5yr_cagr: ItemDetail<Decimal>,
+    pub tangible_book_value_total_equity_5yr_cagr: ItemDetail<f64>,
     /// Capital Spending growth rate, 5 year
-    pub capital_spending_growth_rate_5_year: ItemDetail<Decimal>,
+    pub capital_spending_growth_rate_5_year: ItemDetail<f64>,
     /// Earnings Before Interest, Taxes, Depreciation & Amortization, 5 Year CAGR
-    pub ebitda_5_year_cagr: ItemDetail<Decimal>,
+    pub ebitda_5_year_cagr: ItemDetail<f64>,
     /// Earnings Before Interest, Taxes, Depreciation & Amortization, 5 Year Interim CAGR
-    pub ebitda_5_year_interim_cagr: ItemDetail<Decimal>,
+    pub ebitda_5_year_interim_cagr: ItemDetail<f64>,
     /// Free Operating Cash Flow, 5 Year CAGR
-    pub free_operating_cash_flow_5_year_cagr: ItemDetail<Decimal>,
+    pub free_operating_cash_flow_5_year_cagr: ItemDetail<f64>,
     /// Total Debt, 5 Year CAGR
-    pub total_debt_5_year_cagr: ItemDetail<Decimal>,
+    pub total_debt_5_year_cagr: ItemDetail<f64>,
     /// Net Profit Margin growth rate, 5 year
-    pub net_profit_margin_growth_rate_5_year: ItemDetail<Decimal>,
+    pub net_profit_margin_growth_rate_5_year: ItemDetail<f64>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ItemDetail<T> {
     pub meaning: String,
     pub value: Option<T>,

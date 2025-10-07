@@ -103,15 +103,17 @@ impl Degiro {
         to_date: impl Into<NaiveDate> + Send,
     ) -> Result<Transactions, ClientError> {
         let url = format!("{REPORTING_URL}{TRANSACTIONS_PATH}");
-        
-        let mut response_data = self.request::<HashMap<String, Vec<Transaction>>>(
-            HttpRequest::get(url)
-                .query("sessionId", self.session_id())
-                .query("intAccount", self.int_account().to_string())
-                .query("fromDate", from_date.into().format("%d/%m/%Y").to_string())
-                .query("toDate", to_date.into().format("%d/%m/%Y").to_string())
-                .query("groupTransactionsByOrder", "1")
-        ).await?;
+
+        let mut response_data = self
+            .request::<HashMap<String, Vec<Transaction>>>(
+                HttpRequest::get(url)
+                    .query("sessionId", self.session_id())
+                    .query("intAccount", self.int_account().to_string())
+                    .query("fromDate", from_date.into().format("%d/%m/%Y").to_string())
+                    .query("toDate", to_date.into().format("%d/%m/%Y").to_string())
+                    .query("groupTransactionsByOrder", "1"),
+            )
+            .await?;
 
         let transactions = response_data
             .remove("data")
@@ -130,9 +132,13 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn transactions() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
 
         let transactions = client
             .transactions(

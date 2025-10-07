@@ -4,27 +4,29 @@ use chrono::NaiveDate;
 use derivative::Derivative;
 use serde::{Deserialize, Serialize};
 
-use rust_decimal::Decimal;
-
 use crate::models::{AllowedOrderTypes, OrderTimeTypes};
 
 use super::{risk::RiskCategory, CompanyProfile, Exchange};
+use crate::serde_utils::f64_from_string_or_number;
 
-#[derive(Clone, Debug, Deserialize, Derivative, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Derivative, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Product {
     #[serde(default)]
     pub active: bool,
     pub buy_order_types: Option<AllowedOrderTypes>,
     pub category: RiskCategory,
-    pub close_price: Decimal,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
+    pub close_price: f64,
     pub close_price_date: NaiveDate,
-    pub contract_size: Decimal,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
+    pub contract_size: f64,
     #[serde(rename = "exchangeId")]
     pub exchange: Exchange,
     pub feed_quality: Option<String>,
     pub feed_quality_secondary: Option<String>,
     pub id: String,
+    #[serde(default)]
     pub isin: String,
     pub name: String,
     #[serde(default)]

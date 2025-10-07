@@ -1,10 +1,12 @@
-use std::{collections::HashMap, str::FromStr};
+use std::collections::HashMap;
 
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::Currency;
+use crate::serde_utils::decimal_from_string_or_number;
+use tracing::warn;
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,16 +41,8 @@ pub struct AccountData {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct CurrencyPair {
     pub id: i32,
-    #[serde(deserialize_with = "string_to_decimal")]
+    #[serde(deserialize_with = "decimal_from_string_or_number")]
     pub price: Decimal,
-}
-
-fn string_to_decimal<'de, D>(deserializer: D) -> Result<Decimal, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s: String = String::deserialize(deserializer)?;
-    Decimal::from_str(&s).map_err(serde::de::Error::custom)
 }
 
 #[derive(Clone, Default, Debug, Deserialize)]
@@ -147,7 +141,8 @@ pub struct AccountConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct CashMovement {
-    pub balance: Balance,
+    #[serde(default)]
+    pub balance: Option<Balance>,
     pub change: Option<f64>,
     pub currency: Currency,
     pub date: DateTime<FixedOffset>,
@@ -179,26 +174,45 @@ pub enum CashMovementType {
     Unknown(String),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum AccountTransactionType {
-    #[serde(rename = "CASH_TRANSACTION")]
-    Cash,
-    #[serde(rename = "TRANSACTION")]
-    NoCash,
-    #[serde(rename = "CASH_FUND_TRANSACTION")]
-    Fund,
-    #[serde(rename = "PAYMENT")]
+    CashTransaction,
+    Transaction,
+    CashFundTransaction,
     Payment,
-    #[serde(rename = "FLATEX_CASH_SWEEP")]
     FlatexCashSweep,
+    Unknown(String),
 }
 
-#[derive(Debug, Deserialize)]
+impl<'de> Deserialize<'de> for AccountTransactionType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        let value = match raw.as_str() {
+            "CASH_TRANSACTION" => AccountTransactionType::CashTransaction,
+            "TRANSACTION" => AccountTransactionType::Transaction,
+            "CASH_FUND_TRANSACTION" => AccountTransactionType::CashFundTransaction,
+            "PAYMENT" => AccountTransactionType::Payment,
+            "FLATEX_CASH_SWEEP" => AccountTransactionType::FlatexCashSweep,
+            other => {
+                warn!(transaction_type = other, "Unknown account transaction type encountered");
+                AccountTransactionType::Unknown(raw)
+            }
+        };
+        Ok(value)
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Balance {
     pub cash_fund: Option<Vec<CashFund>>,
-    pub total: Decimal,
-    pub unsettled_cash: Decimal,
+    #[serde(default)]
+    pub total: f64,
+    #[serde(default)]
+    pub unsettled_cash: f64,
 }
 
 #[derive(Debug, Deserialize)]

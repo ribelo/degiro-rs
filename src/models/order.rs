@@ -3,7 +3,6 @@ use std::{collections::HashSet, fmt};
 use chrono::{DateTime, Utc};
 use derivative::Derivative;
 use derive_more::derive::{Deref, DerefMut};
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
@@ -19,14 +18,14 @@ pub struct Order {
     pub product_id: u64,
     pub product: String,
     pub contract_type: u64,
-    pub contract_size: Decimal,
+    pub contract_size: f64,
     pub currency: Currency,
     pub transaction_type: TransactionType,
-    pub size: Decimal,
-    pub quantity: Decimal,
-    pub price: Decimal,
-    pub stop_price: Decimal,
-    pub total_order_value: Decimal,
+    pub size: f64,
+    pub quantity: f64,
+    pub price: f64,
+    pub stop_price: f64,
+    pub total_order_value: f64,
     pub order_type: OrderType,
     pub order_type_id: u8,
     pub order_time_type: OrderTimeType,
@@ -89,7 +88,7 @@ impl Orders {
         Orders(orders)
     }
 
-    pub fn total_value(&self) -> Decimal {
+    pub fn total_value(&self) -> f64 {
         self.iter().map(|o| o.total_order_value).sum()
     }
 

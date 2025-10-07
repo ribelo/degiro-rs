@@ -1,4 +1,3 @@
-
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
@@ -7,22 +6,31 @@ use crate::{
     error::{ClientError, DataError, DateTimeError, ResponseError},
     http::{HttpClient, HttpRequest},
     models::Period,
+    serde_utils::f64_from_string_or_number,
 };
 
 #[derive(Debug, Deserialize)]
 struct Ohlc {
     n: u64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     o: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     h: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     l: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     c: f64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct Candle {
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     pub open: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     pub high: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     pub low: f64,
+    #[serde(deserialize_with = "f64_from_string_or_number")]
     pub close: f64,
     pub time: NaiveDateTime,
 }
@@ -97,7 +105,11 @@ impl Candles {
         }
 
         if let Some(last) = self.data.last() {
-            if last.time < self.interval.add_to_datetime_naive(self.data[self.data.len() - 2].time) {
+            if last.time
+                < self
+                    .interval
+                    .add_to_datetime_naive(self.data[self.data.len() - 2].time)
+            {
                 self.data.pop();
             }
         }
@@ -113,7 +125,9 @@ impl Candles {
         let last_idx = self.data.len() - 1;
         let prev_idx = last_idx - 1;
 
-        let periods_elapsed = (0..n).fold(self.data[prev_idx].time, |acc, _| period.add_to_datetime_naive(acc));
+        let periods_elapsed = (0..n).fold(self.data[prev_idx].time, |acc, _| {
+            period.add_to_datetime_naive(acc)
+        });
         if periods_elapsed > self.data[last_idx].time {
             return Candles {
                 interval: self.interval,
@@ -146,8 +160,11 @@ fn ohlc_vec_to_candles(
                     | Period::P50Y
             ) {
                 if i != ohlc.len() - 1 {
-                    chronoutil::delta::with_day((0..x.n).fold(start, |acc, _| interval.add_to_datetime_naive(acc)), 31)
-                        .ok_or_else(|| {
+                    chronoutil::delta::with_day(
+                        (0..x.n).fold(start, |acc, _| interval.add_to_datetime_naive(acc)),
+                        31,
+                    )
+                    .ok_or_else(|| {
                         ClientError::from(DateTimeError::ParseError {
                             input: "month delta computation".to_string(),
                             reason: "Failed to compute month delta".to_string(),
@@ -196,17 +213,19 @@ impl Degiro {
     ) -> Result<Option<Candles>, ClientError> {
         let vwd_id = vwd_id.as_ref();
         let url = "https://charting.vwdservices.com/hchart/v1/deGiro/data.js";
-        
-        let mut body = self.request_json(
-            HttpRequest::get(url)
-                .require_restricted() // Quotes only need login
-                .query("requestid", "1")
-                .query("format", "json")
-                .query("resolution", interval.to_string())
-                .query("period", period.to_string())
-                .query("series", format!("ohlc:issueid:{vwd_id}"))
-                .query("userToken", self.client_id().to_string())
-        ).await?;
+
+        let mut body = self
+            .request_json(
+                HttpRequest::get(url)
+                    .require_restricted() // Quotes only need login
+                    .query("requestid", "1")
+                    .query("format", "json")
+                    .query("resolution", interval.to_string())
+                    .query("period", period.to_string())
+                    .query("series", format!("ohlc:issueid:{vwd_id}"))
+                    .query("userToken", self.client_id().to_string()),
+            )
+            .await?;
 
         let error = body
             .get("series")
@@ -235,9 +254,7 @@ impl Degiro {
             .and_then(|arr| arr.first_mut())
             .and_then(|s| s.get_mut("data"))
             .map(|d| d.take())
-            .ok_or_else(|| {
-                ClientError::from(DataError::missing_field("series[0].data"))
-            })?;
+            .ok_or_else(|| ClientError::from(DataError::missing_field("series[0].data")))?;
 
         let ohlc_vec = serde_json::from_value::<Vec<Ohlc>>(data)?;
         Ok(Some(ohlc_vec_to_candles(start, end, interval, ohlc_vec)?))
@@ -246,14 +263,39 @@ impl Degiro {
 
 #[cfg(test)]
 mod test {
+
+    #[test]
+    fn candle_deserializes_from_string_prices() {
+        let json = r#"{"interval":"P1D","data":[{"open":"1.0","high":"2.0","low":"0.5","close":"1.5","time":"2024-01-01T00:00:00"}]}"#;
+        let candles: Candles =
+            serde_json::from_str(json).expect("Failed to deserialize candles with string prices");
+        assert_eq!(candles.data.len(), 1);
+        assert!((candles.data[0].close - 1.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn ohlc_deserializes_from_mixed_price_types() {
+        let json = r#"{"n":1,"o":"1.0","h":2.0,"l":"0.5","c":1.5}"#;
+        let ohlc: Ohlc =
+            serde_json::from_str(json).expect("Failed to deserialize OHLC with mixed price types");
+        assert!((ohlc.o - 1.0).abs() < f64::EPSILON);
+        assert!((ohlc.h - 2.0).abs() < f64::EPSILON);
+        assert!((ohlc.l - 0.5).abs() < f64::EPSILON);
+        assert!((ohlc.c - 1.5).abs() < f64::EPSILON);
+    }
+
     use super::*;
 
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_quotes() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
         let quotes = client
             .quotes_by_id("332111", Period::P1Y, Period::P1M)
             .await

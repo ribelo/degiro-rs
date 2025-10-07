@@ -1,44 +1,26 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::Currency;
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, strum::Display)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, strum::Display)]
 pub enum Exchange {
-    #[serde(rename = "663")]
     NSDQ,
-    #[serde(rename = "676")]
     NSY,
-    #[serde(rename = "200")]
     EAM,
-    #[serde(rename = "194")]
     XET,
-    #[serde(rename = "196")]
     TDG,
-    #[serde(rename = "710")]
     EPA,
-    #[serde(rename = "801")]
     WSE,
-    #[serde(rename = "5001")]
     TSE,
-    #[serde(rename = "520")]
     OSL,
-    #[serde(rename = "947")]
     SWX,
-    #[serde(rename = "860")]
     OMX,
-    #[serde(rename = "219")]
     ATH,
-    #[serde(rename = "650")]
     ASE,
-    #[serde(rename = "893")]
     TSV,
-    #[serde(rename = "5002")]
     ASX,
-    #[serde(rename = "570")]
     LSE,
-    #[serde(rename = "892")]
     TOR,
-    #[serde(rename = "454")]
     HKS,
     Unknown,
 }
@@ -54,5 +36,39 @@ impl From<Exchange> for Currency {
             Exchange::LSE => Currency::GBP,
             _ => Currency::EUR,
         }
+    }
+}
+
+impl<'de> Deserialize<'de> for Exchange {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = String::deserialize(deserializer)?;
+        let value = match raw.as_str() {
+            "663" | "NSDQ" => Exchange::NSDQ,
+            "676" | "NSY" => Exchange::NSY,
+            "200" | "EAM" => Exchange::EAM,
+            "194" | "XET" => Exchange::XET,
+            "196" | "TDG" => Exchange::TDG,
+            "710" | "EPA" => Exchange::EPA,
+            "801" | "WSE" => Exchange::WSE,
+            "5001" | "TSE" => Exchange::TSE,
+            "520" | "OSL" => Exchange::OSL,
+            "947" | "SWX" => Exchange::SWX,
+            "860" | "OMX" => Exchange::OMX,
+            "219" | "ATH" => Exchange::ATH,
+            "650" | "ASE" => Exchange::ASE,
+            "893" | "TSV" => Exchange::TSV,
+            "5002" | "ASX" => Exchange::ASX,
+            "570" | "LSE" => Exchange::LSE,
+            "892" | "TOR" => Exchange::TOR,
+            "454" | "HKS" => Exchange::HKS,
+            other => {
+                tracing::warn!(exchange_id = other, "Unknown exchange id; defaulting to Unknown");
+                Exchange::Unknown
+            }
+        };
+        Ok(value)
     }
 }

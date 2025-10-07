@@ -1,5 +1,5 @@
 [package]
-name = "degiro-rs"
+name = "degiro-ox"
 version = "0.1.0"
 edition = "2021"
 
@@ -42,3 +42,5 @@ tracing = "0.1"
 aes-gcm = "0.10"
 dirs = "5.0"
 parking_lot = "0.12"
+argon2 = "0.5"
+rand = "0.8"

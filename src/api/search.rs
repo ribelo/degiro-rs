@@ -57,15 +57,17 @@ pub struct QueryProduct {
 impl Degiro {
     pub async fn search(&self, query: Query) -> Result<Option<Vec<QueryProduct>>, ClientError> {
         let url = format!("{PRODUCT_SEARCH_URL}{PRODUCT_LOOKUP_PATH}");
-        
-        let mut body = self.request_json(
-            HttpRequest::get(url)
-                .query("intAccount", self.int_account().to_string())
-                .query("sessionId", self.session_id())
-                .query("searchText", &query.query)
-                .query("limit", query.limit.to_string())
-                .query("offset", query.offset.to_string())
-        ).await?;
+
+        let mut body = self
+            .request_json(
+                HttpRequest::get(url)
+                    .query("intAccount", self.int_account().to_string())
+                    .query("sessionId", self.session_id())
+                    .query("searchText", &query.query)
+                    .query("limit", query.limit.to_string())
+                    .query("offset", query.offset.to_string()),
+            )
+            .await?;
 
         if let Some(products) = body.get_mut("products") {
             let products: Vec<QueryProduct> = serde_json::from_value(products.take())?;
@@ -98,11 +100,21 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_search() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
         let query = Query::builder().query("microsoft").limit(10).build();
-        let products = client.search(query).await.expect("Failed to search for products");
-        dbg!(products.expect("Search returned None").first().expect("No products found in search results"));
+        let products = client
+            .search(query)
+            .await
+            .expect("Failed to search for products");
+        dbg!(products
+            .expect("Search returned None")
+            .first()
+            .expect("No products found in search results"));
     }
 }

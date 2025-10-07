@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{NaiveDate, Utc};
 use futures_concurrency::future::TryJoin;
+use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -9,7 +10,8 @@ use crate::{
     error::{ClientError, DataError},
     http::{HttpClient, HttpRequest},
     models::{
-        AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType, Money, Period,
+        AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType,
+        Money, Period,
     },
     paths::{
         ACCOUNT_CONFIG_PATH, ACCOUNT_INFO_PATH, ACCOUNT_OVERVIEW_PATH, BASE_API_URL,
@@ -21,10 +23,10 @@ use crate::{
 impl Degiro {
     pub(crate) async fn account_config(&self) -> Result<(), ClientError> {
         let url = format!("{BASE_API_URL}{ACCOUNT_CONFIG_PATH}");
-        
-        let mut response_data: HashMap<String, AccountConfig> = self.request(
-            HttpRequest::get(url)
-        ).await?;
+
+        let mut response_data: HashMap<String, AccountConfig> = self
+            .request(HttpRequest::get(url).require_restricted())
+            .await?;
 
         let account_config = response_data
             .remove("data")
@@ -33,11 +35,13 @@ impl Degiro {
         // Update client state
         self.set_client_id(account_config.client_id);
         self.set_account_config(account_config);
-        self.set_auth_state(AuthState::Authorized)?;
 
-        // Get additional account data
+        // Get additional account data before setting Authorized state
         let account_data = self.account_data().await?;
         self.set_int_account(account_data.int_account);
+
+        // Only set Authorized state after we've successfully gotten all data
+        self.set_auth_state(AuthState::Authorized)?;
 
         // Save session after successful full authorization
         if let Err(e) = self.save_session() {
@@ -51,13 +55,15 @@ impl Degiro {
 
 impl Degiro {
     pub async fn account_data(&self) -> Result<AccountData, ClientError> {
-        let url = format!("{PA_URL}/client");
-        
-        let response_data: HashMap<String, AccountData> = self.request(
-            HttpRequest::get(url)
-                .require_restricted() // Only needs login, not full auth
-                .query("sessionId", self.session_id())
-        ).await?;
+        let url = format!("{PA_URL}client");
+
+        let response_data: HashMap<String, AccountData> = self
+            .request(
+                HttpRequest::get(url)
+                    .require_restricted() // Only needs login, not full auth
+                    .query("sessionId", self.session_id()),
+            )
+            .await?;
 
         response_data
             .get("data")
@@ -69,11 +75,10 @@ impl Degiro {
 impl Degiro {
     pub async fn account_info(&self) -> Result<AccountInfo, ClientError> {
         let url = self.build_trading_url(ACCOUNT_INFO_PATH)?;
-        
-        let mut response_data: HashMap<String, AccountInfo> = self.request(
-            HttpRequest::get(url)
-                .query("sessionId", self.session_id())
-        ).await?;
+
+        let mut response_data: HashMap<String, AccountInfo> = self
+            .request(HttpRequest::get(url).query("sessionId", self.session_id()))
+            .await?;
 
         let account_info = response_data
             .remove("data")
@@ -85,7 +90,7 @@ impl Degiro {
             .iter()
             .map(|(pair_name, currency_pair)| (pair_name.clone(), currency_pair.price))
             .collect();
-        
+
         self.session.set_currency_rates(currency_rates);
 
         Ok(account_info)
@@ -99,14 +104,16 @@ impl Degiro {
         to_date: &NaiveDate,
     ) -> Result<AccountState, ClientError> {
         let url = format!("{REPORTING_URL}{ACCOUNT_OVERVIEW_PATH}");
-        
-        let mut body: HashMap<String, HashMap<String, Vec<CashMovement>>> = self.request(
-            HttpRequest::get(url)
-                .query("sessionId", self.session_id())
-                .query("intAccount", self.int_account().to_string())
-                .query("fromDate", from_date.format("%d/%m/%Y").to_string())
-                .query("toDate", to_date.format("%d/%m/%Y").to_string())
-        ).await?;
+
+        let mut body: HashMap<String, HashMap<String, Vec<CashMovement>>> = self
+            .request(
+                HttpRequest::get(url)
+                    .query("sessionId", self.session_id())
+                    .query("intAccount", self.int_account().to_string())
+                    .query("fromDate", from_date.format("%d/%m/%Y").to_string())
+                    .query("toDate", to_date.format("%d/%m/%Y").to_string()),
+            )
+            .await?;
 
         let mut data = body
             .remove("data")
@@ -128,7 +135,9 @@ impl Degiro {
             self.account_info(),
             self.account_state(&from_date, &to_date),
             self.total_portfolio_value(),
-        ).try_join().await?;
+        )
+            .try_join()
+            .await?;
 
         let current_balance = account_state
             .iter()
@@ -136,11 +145,13 @@ impl Degiro {
                 matches!(movement.movement_type, CashMovementType::FxCredit(..))
                     && movement.currency == account_info.base_currency
             })
-            .map(|movement| movement.balance.total)
-            .unwrap_or_else(|| {
-                // No FxCredit movement found, assume zero balance
-                Decimal::ZERO
-            });
+            .and_then(|movement| {
+                movement
+                    .balance
+                    .as_ref()
+                    .and_then(|balance| Decimal::from_f64(balance.total))
+            })
+            .unwrap_or(Decimal::ZERO);
 
         let total_value = portfolio_value + current_balance;
 
@@ -155,7 +166,7 @@ impl Degiro {
         to_date: &NaiveDate,
     ) -> Result<String, ClientError> {
         let url = format!("{CASH_ACCOUNT_REPORT_URL}/csv");
-        
+
         self.request_text(
             HttpRequest::get(url)
                 .query("sessionId", self.session_id())
@@ -163,8 +174,9 @@ impl Degiro {
                 .query("country", "PL")
                 .query("lang", "pl")
                 .query("fromDate", from_date.format("%d/%m/%Y").to_string())
-                .query("toDate", to_date.format("%d/%m/%Y").to_string())
-        ).await
+                .query("toDate", to_date.format("%d/%m/%Y").to_string()),
+        )
+        .await
     }
 }
 
@@ -177,24 +189,36 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_account_data() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
-        client.account_config().await.expect("Failed to get account configuration");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
     }
 
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_account_info() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
-        let info = client.account_info().await.expect("Failed to get account info");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
+        let info = client
+            .account_info()
+            .await
+            .expect("Failed to get account info");
         dbg!(info);
     }
 
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_account_state() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
         let state = client
             .account_state(
                 &NaiveDate::from_ymd_opt(2024, 11, 1).expect("Failed to create start date"),
@@ -208,9 +232,13 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_cash_report() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
         let report = client
             .cash_report(
                 &NaiveDate::from_ymd_opt(2024, 10, 1).expect("Failed to create start date"),
@@ -224,10 +252,17 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_balance() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
-        let balance = client.balance().await.expect("Failed to get account balance");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
+        let balance = client
+            .balance()
+            .await
+            .expect("Failed to get account balance");
         dbg!(balance);
     }
 }

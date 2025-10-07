@@ -1,5 +1,4 @@
 use chrono::NaiveDate;
-use rust_decimal::{prelude::FromPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -370,14 +369,14 @@ impl From<&serde_json::Value> for CashFlow {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ItemDetail {
     pub meaning: String,
-    pub value: Decimal,
+    pub value: f64,
 }
 
 impl From<&serde_json::Value> for ItemDetail {
     fn from(value: &serde_json::Value) -> Self {
         ItemDetail {
             meaning: value["meaning"].as_str().unwrap().to_string(),
-            value: Decimal::from_f64(value["value"].as_f64().unwrap()).unwrap(),
+            value: value["value"].as_f64().unwrap(),
         }
     }
 }

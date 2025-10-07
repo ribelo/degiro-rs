@@ -23,13 +23,15 @@ impl Degiro {
         isin: impl AsRef<str>,
     ) -> Result<Option<CompanyRatios>, ClientError> {
         let url = format!("{}{}{}", BASE_API_URL, COMPANY_RATIOS_PATH, isin.as_ref());
-        
-        let json = self.request_json(
-            HttpRequest::get(url)
-                .query("intAccount", self.int_account().to_string())
-                .query("sessionId", self.session_id())
-                .header("Content-Type", "application/json")
-        ).await?;
+
+        let json = self
+            .request_json(
+                HttpRequest::get(url)
+                    .query("intAccount", self.int_account().to_string())
+                    .query("sessionId", self.session_id())
+                    .header("Content-Type", "application/json"),
+            )
+            .await?;
         let data = json
             .get("data")
             .ok_or_else(|| DataError::missing_field("data"))?;
@@ -53,11 +55,18 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_company_ratios() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
 
-        let report = client.company_ratios_by_id("15850348").await.expect("Failed to get company ratios");
+        let report = client
+            .company_ratios_by_id("15850348")
+            .await
+            .expect("Failed to get company ratios");
         println!("{report:#?}");
     }
 }

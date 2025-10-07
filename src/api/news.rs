@@ -3,8 +3,8 @@ use reqwest::header;
 use crate::{
     client::Degiro,
     error::{ApiErrorResponse, ClientError, DataError, ResponseError},
-    session::AuthState,
     models::News,
+    session::AuthState,
 };
 
 impl Degiro {
@@ -47,7 +47,9 @@ impl Degiro {
 
         if let Err(err) = res.error_for_status_ref() {
             let Some(status) = err.status() else {
-                return Err(ClientError::ResponseError(ResponseError::invalid(err.to_string())));
+                return Err(ClientError::ResponseError(ResponseError::invalid(
+                    err.to_string(),
+                )));
             };
 
             if status.as_u16() == 401 {
@@ -84,13 +86,23 @@ mod tests {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_news_by_company() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
-        client.account_config().await.expect("Failed to get account configuration");
-        let news = client.company_news("US7433151039").await.expect("Failed to get company news");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
+        let news = client
+            .company_news("US7433151039")
+            .await
+            .expect("Failed to get company news");
         if let Some(news_items) = &news {
             for x in news_items {
-                println!("{}", serde_json::to_string_pretty(x).expect("Failed to serialize news item to JSON"));
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(x).expect("Failed to serialize news item to JSON")
+                );
             }
         }
     }

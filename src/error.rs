@@ -1,6 +1,6 @@
+use serde::Deserialize;
 use std::fmt::Display;
 use thiserror::Error;
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct ApiError {
@@ -70,10 +70,6 @@ pub enum ClientError {
 
     #[error("Missing credentials: {0}")]
     MissingCredentials(String),
-
-    // Keep for backward compatibility during migration
-    #[error("Unexpected error: {0}")]
-    UnexpectedError(String),
 }
 
 #[derive(Debug, Error)]
@@ -94,15 +90,14 @@ pub enum DataError {
     },
 
     #[error("Invalid value for {field}: {value}")]
-    InvalidValue {
-        field: &'static str,
-        value: String,
-    },
+    InvalidValue { field: &'static str, value: String },
 }
 
 impl DataError {
     pub fn missing_field(field: impl Into<String>) -> Self {
-        Self::MissingField { field: field.into() }
+        Self::MissingField {
+            field: field.into(),
+        }
     }
 
     pub fn invalid_type(field: &'static str, expected: &'static str) -> Self {
@@ -181,10 +176,7 @@ impl ResponseError {
 #[derive(Debug, Error)]
 pub enum DateTimeError {
     #[error("Failed to parse date '{input}': {reason}")]
-    ParseError {
-        input: String,
-        reason: String,
-    },
+    ParseError { input: String, reason: String },
 
     #[error("Invalid date calculation: {0}")]
     InvalidCalculation(String),
@@ -192,8 +184,6 @@ pub enum DateTimeError {
     #[error("Chrono error: {0}")]
     ChronoError(#[from] chrono::ParseError),
 }
-
-
 
 impl DateTimeError {
     pub fn parse_error(input: impl Into<String>, reason: impl Into<String>) -> Self {

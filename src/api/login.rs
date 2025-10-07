@@ -1,9 +1,9 @@
 use crate::{
     client::Degiro,
-    error::{ClientError, AuthError},
+    error::{AuthError, ClientError},
     http::{HttpClient, HttpRequest},
-    session::AuthState,
     paths::{BASE_API_URL, LOGIN_URL_PATH},
+    session::AuthState,
 };
 
 use serde::Deserialize;
@@ -31,7 +31,9 @@ impl Degiro {
             base32::Alphabet::Rfc4648 { padding: false },
             &self.totp_secret,
         )
-        .ok_or(AuthError::InvalidTotpSecret("Invalid base32 encoding".to_string()))?;
+        .ok_or(AuthError::InvalidTotpSecret(
+            "Invalid base32 encoding".to_string(),
+        ))?;
 
         let totp = totp_rs::TOTP::new(totp_rs::Algorithm::SHA1, 6, 1, 30, decoded_secret)
             .map_err(|e| AuthError::TotpGenerationFailed(e.to_string()))?;
@@ -45,9 +47,9 @@ impl Degiro {
 
     pub async fn login(&self) -> Result<(), ClientError> {
         let totp = self.get_totp()?;
-        
+
         let url = format!("{BASE_API_URL}{LOGIN_URL_PATH}totp");
-        
+
         let login_body = json!({
             "isPassCodeReset": false,
             "isRedirectToMobile": false,
@@ -55,14 +57,16 @@ impl Degiro {
             "username": self.username,
             "oneTimePassword": totp,
         });
-        
-        let body = self.request::<LoginResponse>(
-            HttpRequest::post(url)
-                .query("reason", "session_expired")
-                .header("Content-Type", "application/json")
-                .json(&login_body)?
-                .no_auth()
-        ).await?;
+
+        let body = self
+            .request::<LoginResponse>(
+                HttpRequest::post(url)
+                    .query("reason", "session_expired")
+                    .header("Content-Type", "application/json")
+                    .json(&login_body)?
+                    .no_auth(),
+            )
+            .await?;
 
         let session_id = match body.session_id {
             Some(id) => id,
@@ -71,13 +75,13 @@ impl Degiro {
 
         self.set_session_id(session_id);
         self.set_auth_state(AuthState::Restricted)?;
-        
+
         // Save session after successful login
         if let Err(e) = self.save_session() {
             // Don't fail the login if we can't save the session
             tracing::warn!("Failed to save session after login: {}", e);
         }
-        
+
         Ok(())
     }
 }
@@ -89,13 +93,20 @@ mod test {
     #[tokio::test]
     #[ignore = "Integration test - hits real API"]
     async fn test_login() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         client.login().await.expect("Failed to login to Degiro");
     }
 
     #[test]
     fn test_totp() {
-        let client = Degiro::load_from_env().expect("Failed to load Degiro client from environment variables");
+        if std::env::var("DEGIRO_TOTP_SECRET").is_err() {
+            eprintln!("Skipping test_totp: DEGIRO_TOTP_SECRET not set");
+            return;
+        }
+
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
         let totp = client.get_totp().expect("Failed to generate TOTP token");
         println!("TOTP: {totp}");
     }

@@ -1,20 +1,19 @@
 use std::{
+    sync::atomic::{AtomicU64, Ordering},
     sync::Arc,
     time::{Duration, Instant},
-    sync::atomic::{AtomicU64, Ordering},
 };
-
-use rust_decimal::Decimal;
 
 use bon::Builder;
 use leaky_bucket::RateLimiter;
+use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
 use tracing::{debug, info, instrument};
 
 use crate::{
+    error::{ClientError, DataError, ResponseError},
     models::{AccountConfig, Currency},
-    session::{Session, AuthState},
-    error::{ClientError, ResponseError, DataError},
+    session::{AuthState, Session},
 };
 
 #[derive(Debug, Clone)]
@@ -27,7 +26,6 @@ pub struct HealthStatus {
     pub rate_limit_remaining: u32,
     pub last_error: Option<(Instant, String)>,
 }
-
 
 #[derive(Clone, Builder)]
 pub struct Degiro {
@@ -116,12 +114,21 @@ impl Degiro {
     }
 
     pub fn load_from_env() -> Result<Self, ClientError> {
-        let username = std::env::var("DEGIRO_USERNAME")
-            .map_err(|_| ClientError::MissingCredentials("DEGIRO_USERNAME environment variable not set".to_string()))?;
-        let password = std::env::var("DEGIRO_PASSWORD")
-            .map_err(|_| ClientError::MissingCredentials("DEGIRO_PASSWORD environment variable not set".to_string()))?;
-        let secret = std::env::var("DEGIRO_TOTP_SECRET")
-            .map_err(|_| ClientError::MissingCredentials("DEGIRO_TOTP_SECRET environment variable not set".to_string()))?;
+        let username = std::env::var("DEGIRO_USERNAME").map_err(|_| {
+            ClientError::MissingCredentials(
+                "DEGIRO_USERNAME environment variable not set".to_string(),
+            )
+        })?;
+        let password = std::env::var("DEGIRO_PASSWORD").map_err(|_| {
+            ClientError::MissingCredentials(
+                "DEGIRO_PASSWORD environment variable not set".to_string(),
+            )
+        })?;
+        let secret = std::env::var("DEGIRO_TOTP_SECRET").map_err(|_| {
+            ClientError::MissingCredentials(
+                "DEGIRO_TOTP_SECRET environment variable not set".to_string(),
+            )
+        })?;
 
         let cookie_jar = Arc::new(reqwest_cookie_store::CookieStoreMutex::default());
         let http_client = reqwest::ClientBuilder::new()
@@ -163,19 +170,22 @@ impl Degiro {
 
     /// Load session from disk if available
     pub fn load_session(&self) -> Result<bool, ClientError> {
-        self.session.load_session(&self.username, &self.password)
+        self.session
+            .load_session(&self.username, &self.password)
             .map_err(ClientError::AuthError)
     }
 
     /// Save current session to disk
     pub fn save_session(&self) -> Result<(), ClientError> {
-        self.session.save_session(&self.username, &self.password)
+        self.session
+            .save_session(&self.username, &self.password)
             .map_err(ClientError::AuthError)
     }
 
     /// Clear saved session from disk
     pub fn clear_saved_session(&self) -> Result<(), ClientError> {
-        self.session.clear_saved_session()
+        self.session
+            .clear_saved_session()
             .map_err(ClientError::AuthError)
     }
 
@@ -239,15 +249,21 @@ impl Degiro {
 
     /// Automatically authenticate to the required level
     #[instrument(skip(self), fields(required = ?required, current_state = ?self.session.auth_state()))]
-    pub async fn ensure_auth_level(&self, required: crate::session::AuthLevel) -> Result<(), ClientError> {
+    pub async fn ensure_auth_level(
+        &self,
+        required: crate::session::AuthLevel,
+    ) -> Result<(), ClientError> {
         if self.session.can_perform(required) {
             debug!("Already have required auth level");
             return Ok(());
         }
 
         info!("Auth level upgrade required, acquiring auth semaphore");
-        let _permit = self.auth_semaphore.acquire().await
-            .map_err(|_| ClientError::ResponseError(ResponseError::network("Failed to acquire auth semaphore".to_string())))?;
+        let _permit = self.auth_semaphore.acquire().await.map_err(|_| {
+            ClientError::ResponseError(ResponseError::network(
+                "Failed to acquire auth semaphore".to_string(),
+            ))
+        })?;
 
         // Double-check after acquiring semaphore
         if self.session.can_perform(required) {
@@ -262,7 +278,10 @@ impl Degiro {
                 Ok(())
             }
             crate::session::AuthLevel::Restricted => {
-                if !self.session.can_perform(crate::session::AuthLevel::Restricted) {
+                if !self
+                    .session
+                    .can_perform(crate::session::AuthLevel::Restricted)
+                {
                     info!("Performing login to reach Restricted auth level");
                     self.login().await
                 } else {
@@ -270,11 +289,17 @@ impl Degiro {
                 }
             }
             crate::session::AuthLevel::Authorized => {
-                if !self.session.can_perform(crate::session::AuthLevel::Restricted) {
+                if !self
+                    .session
+                    .can_perform(crate::session::AuthLevel::Restricted)
+                {
                     info!("Performing login to reach Restricted auth level first");
                     self.login().await?;
                 }
-                if !self.session.can_perform(crate::session::AuthLevel::Authorized) {
+                if !self
+                    .session
+                    .can_perform(crate::session::AuthLevel::Authorized)
+                {
                     info!("Fetching account config to reach Authorized auth level");
                     self.account_config().await
                 } else {
@@ -286,7 +311,8 @@ impl Degiro {
 
     /// Legacy method for backward compatibility
     pub async fn ensure_authorized(&self) -> Result<(), ClientError> {
-        self.ensure_auth_level(crate::session::AuthLevel::Authorized).await
+        self.ensure_auth_level(crate::session::AuthLevel::Authorized)
+            .await
     }
 
     pub(crate) fn build_trading_url(&self, path: &str) -> Result<String, ClientError> {
@@ -311,26 +337,26 @@ impl Degiro {
         }
 
         let currency_rates = self.session.currency_rates();
-        
-        // Try direct lookup: "EUR/USD"
+
         let direct_key = format!("{from}/{to}");
-        if let Some(&rate) = currency_rates.get(&direct_key) {
-            return Ok(rate);
+        if let Some(rate) = currency_rates.get(&direct_key) {
+            return Ok(*rate);
         }
-        
-        // Try inverse lookup: "USD/EUR" -> 1/rate
+
         let inverse_key = format!("{to}/{from}");
-        if let Some(&rate) = currency_rates.get(&inverse_key) {
+        if let Some(rate) = currency_rates.get(&inverse_key) {
             if rate.is_zero() {
                 return Err(ClientError::DataError(DataError::invalid_value(
-                    "exchange_rate", format!("Zero exchange rate for {inverse_key}")
+                    "exchange_rate",
+                    format!("Zero exchange rate for {inverse_key}"),
                 )));
             }
-            return Ok(Decimal::ONE / rate);
+            return Ok(Decimal::ONE / *rate);
         }
-        
+
         Err(ClientError::DataError(DataError::parse_error(
-            "exchange_rate", format!("Exchange rate not available for {from} to {to}")
+            "exchange_rate",
+            format!("Exchange rate not available for {from} to {to}"),
         )))
     }
 }
