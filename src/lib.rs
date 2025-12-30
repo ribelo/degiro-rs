@@ -6,6 +6,7 @@ pub mod models;
 pub mod paths;
 pub mod serde_utils;
 pub mod session;
+pub mod storage;
 
 pub mod prelude {
     pub use crate::client::Degiro;

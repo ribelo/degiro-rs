@@ -14,7 +14,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::{debug, info, warn};
 
-use crate::models::AccountConfig;
+use crate::models::{AccountConfig, Currency, SeriesIdentifier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum AuthState {
@@ -104,6 +104,21 @@ pub struct SessionState {
     pub currency_rates: HashMap<String, Decimal>,
 }
 
+#[derive(Debug, Default)]
+struct SessionCaches {
+    id_to_series: HashMap<String, SeriesIdentifier>,
+    isin_to_id: HashMap<String, String>,
+    fx_pair_to_product_id: HashMap<(Currency, Currency), String>,
+}
+
+impl SessionCaches {
+    fn clear(&mut self) {
+        self.id_to_series.clear();
+        self.isin_to_id.clear();
+        self.fx_pair_to_product_id.clear();
+    }
+}
+
 impl SessionState {
     pub fn new() -> Self {
         Self::default()
@@ -176,12 +191,14 @@ impl SessionState {
 #[derive(Debug, Clone)]
 pub struct Session {
     state: Arc<RwLock<SessionState>>,
+    caches: Arc<RwLock<SessionCaches>>,
 }
 
 impl Session {
     pub fn new() -> Self {
         Self {
             state: Arc::new(RwLock::new(SessionState::default())),
+            caches: Arc::new(RwLock::new(SessionCaches::default())),
         }
     }
 
@@ -201,13 +218,25 @@ impl Session {
     {
         let mut state = self.state.write().unwrap_or_else(|e| {
             warn!("RwLock poisoned while updating session state, recovering");
+           e.into_inner()
+       });
+       f(&mut state);
+   }
+
+    /// Restore session from a previously saved [`SessionState`].
+    ///
+    /// This allows consumers to restore sessions from their own storage backends
+    /// without using the deprecated file-based persistence.
+    pub fn restore_state(&self, restored: SessionState) {
+        let mut state = self.state.write().unwrap_or_else(|e| {
+            warn!("RwLock poisoned while restoring session state, recovering");
             e.into_inner()
         });
-        f(&mut state);
+        *state = restored;
     }
 
-    pub fn auth_state(&self) -> AuthState {
-        self.state
+   pub fn auth_state(&self) -> AuthState {
+       self.state
             .read()
             .unwrap_or_else(|e| {
                 warn!("RwLock poisoned while reading auth state, recovering");
@@ -334,6 +363,10 @@ impl Session {
             .write()
             .unwrap_or_else(|e| e.into_inner())
             .clear();
+        self.caches
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     pub fn currency_rates(&self) -> HashMap<String, Decimal> {
@@ -349,6 +382,72 @@ impl Session {
             .write()
             .unwrap_or_else(|e| e.into_inner())
             .currency_rates = rates;
+    }
+
+    pub fn cache_product_identifiers(
+        &self,
+        product_id: &str,
+        isin: Option<&str>,
+        series: Option<&SeriesIdentifier>,
+    ) {
+        let mut caches = self.caches.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(series) = series {
+            caches
+                .id_to_series
+                .insert(product_id.to_string(), series.clone());
+        }
+        if let Some(isin) = isin {
+            let trimmed = isin.trim();
+            if !trimmed.is_empty() {
+                caches
+                    .isin_to_id
+                    .insert(trimmed.to_string(), product_id.to_string());
+            }
+        }
+    }
+
+    pub fn cached_series_by_product(&self, product_id: &str) -> Option<SeriesIdentifier> {
+        self.caches
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .id_to_series
+            .get(product_id)
+            .cloned()
+    }
+
+    pub fn cached_product_id_by_isin(&self, isin: &str) -> Option<String> {
+        self.caches
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .isin_to_id
+            .get(isin)
+            .cloned()
+    }
+
+    pub fn cache_fx_pair_product(&self, from: Currency, to: Currency, product_id: String) {
+        self.caches
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .fx_pair_to_product_id
+            .insert((from, to), product_id);
+    }
+
+    pub fn cached_fx_pair_product(&self, from: Currency, to: Currency) -> Option<String> {
+        self.caches
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .fx_pair_to_product_id
+            .get(&(from, to))
+            .cloned()
+    }
+
+    pub fn set_fx_pair_products<I>(&self, pairs: I)
+    where
+        I: IntoIterator<Item = ((Currency, Currency), String)>,
+    {
+        let mut caches = self.caches.write().unwrap_or_else(|e| e.into_inner());
+        caches.fx_pair_to_product_id.clear();
+        caches.fx_pair_to_product_id.extend(pairs.into_iter());
     }
 
     /// Check if current session can perform an operation requiring given auth level
@@ -440,13 +539,17 @@ impl Session {
         }
 
         Ok(degiro_dir.join("session.enc"))
-    }
+   }
 
-    /// Save session state to encrypted file
-    pub fn save_session(
-        &self,
-        username: &str,
-        password: &str,
+   /// Save session state to encrypted file
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use degiro_ox::storage::encrypt_session and handle I/O yourself"
+    )]
+   pub fn save_session(
+       &self,
+       username: &str,
+       password: &str,
     ) -> Result<(), crate::error::AuthError> {
         let file_path = Self::session_file_path_for_user(username)?;
         let state = self.get_state();
@@ -509,14 +612,18 @@ impl Session {
         }
 
         info!("Session saved to {:?}", file_path);
-        Ok(())
-    }
+       Ok(())
+   }
 
-    /// Load session state from encrypted file
-    pub fn load_session(
-        &self,
-        username: &str,
-        password: &str,
+   /// Load session state from encrypted file
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use degiro_ox::storage::decrypt_session and handle I/O yourself"
+    )]
+   pub fn load_session(
+       &self,
+       username: &str,
+       password: &str,
     ) -> Result<bool, crate::error::AuthError> {
         let file_path = Self::session_file_path_for_user(username)?;
 
@@ -575,13 +682,17 @@ impl Session {
         self.update_state(|state| *state = loaded_state);
 
         info!("Session loaded successfully from {:?}", file_path);
-        Ok(true)
-    }
+       Ok(true)
+   }
 
-    /// Clear saved session file for a specific user
-    pub fn clear_saved_session_for_user(
-        &self,
-        username: &str,
+   /// Clear saved session file for a specific user
+    #[deprecated(
+        since = "0.2.0",
+        note = "Handle session file deletion yourself"
+    )]
+   pub fn clear_saved_session_for_user(
+       &self,
+       username: &str,
     ) -> Result<(), crate::error::AuthError> {
         let file_path = Self::session_file_path_for_user(username)?;
 
@@ -592,12 +703,16 @@ impl Session {
             info!("Saved session file removed for user");
         }
 
-        Ok(())
-    }
+       Ok(())
+   }
 
-    /// Clear saved session file (legacy)
-    pub fn clear_saved_session(&self) -> Result<(), crate::error::AuthError> {
-        let file_path = Self::session_file_path()?;
+   /// Clear saved session file (legacy)
+    #[deprecated(
+        since = "0.2.0",
+        note = "Handle session file deletion yourself"
+    )]
+   pub fn clear_saved_session(&self) -> Result<(), crate::error::AuthError> {
+       let file_path = Self::session_file_path()?;
 
         if file_path.exists() {
             fs::remove_file(&file_path).map_err(|e| {
@@ -619,6 +734,7 @@ impl Default for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::Currency;
 
     #[test]
     fn test_auth_state_transitions() {
@@ -683,5 +799,55 @@ mod tests {
         assert!(AuthState::Authorized.can_perform(AuthLevel::None));
         assert!(AuthState::Authorized.can_perform(AuthLevel::Restricted));
         assert!(AuthState::Authorized.can_perform(AuthLevel::Authorized));
+    }
+
+    #[test]
+    fn caches_store_product_identifiers() {
+        let session = Session::new();
+
+        session.cache_product_identifiers(
+            "123",
+            Some("US1234567"),
+            Some(&SeriesIdentifier::issue_id("vwd123")),
+        );
+
+        assert_eq!(
+            session.cached_series_by_product("123").unwrap().value(),
+            "vwd123"
+        );
+        assert_eq!(
+            session.cached_product_id_by_isin("US1234567").as_deref(),
+            Some("123")
+        );
+
+        session.clear();
+
+        assert!(session.cached_series_by_product("123").is_none());
+        assert!(session.cached_product_id_by_isin("US1234567").is_none());
+    }
+
+    #[test]
+    fn caches_store_fx_pairs() {
+        let session = Session::new();
+
+        session.cache_fx_pair_product(Currency::EUR, Currency::USD, "42".to_string());
+        assert_eq!(
+            session
+                .cached_fx_pair_product(Currency::EUR, Currency::USD)
+                .as_deref(),
+            Some("42")
+        );
+
+        session.set_fx_pair_products([((Currency::GBP, Currency::CHF), "7".to_string())]);
+
+        assert!(session
+            .cached_fx_pair_product(Currency::EUR, Currency::USD)
+            .is_none());
+        assert_eq!(
+            session
+                .cached_fx_pair_product(Currency::GBP, Currency::CHF)
+                .as_deref(),
+            Some("7")
+        );
     }
 }

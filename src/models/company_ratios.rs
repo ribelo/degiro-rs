@@ -3,6 +3,7 @@ use std::str::FromStr;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::warn;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -471,8 +472,8 @@ fn fill_ratio(current_ratios: &mut CurrentRatios, item: &Value) {
         "FOCF_AYr5CAGR" => current_ratios.free_operating_cash_flow_5_year_cagr = item.into(),
         "STLD_AYr5CAGR" => current_ratios.total_debt_5_year_cagr = item.into(),
         "NPMTRENDGR" => current_ratios.net_profit_margin_growth_rate_5_year = item.into(),
-        _ => {
-            panic!("Unknown item id: {}", item["id"].as_str().unwrap())
+        unknown_id => {
+            warn!(field = unknown_id, "Unknown ratio field encountered, skipping");
         }
     }
 }

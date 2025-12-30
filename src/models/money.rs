@@ -34,6 +34,7 @@ pub enum Currency {
 #[derive(Debug, Default, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Money {
     currency: Currency,
+    #[serde(with = "rust_decimal::serde::str")]
     amount: Decimal,
 }
 
@@ -240,24 +241,16 @@ impl std::ops::Div for Money {
 }
 
 impl std::ops::Div<Decimal> for Money {
-    type Output = Self;
+    type Output = Result<Self, MoneyError>;
 
     fn div(self, rhs: Decimal) -> Self::Output {
         if rhs.is_zero() {
-            panic!("Division by zero");
+            return Err(MoneyError::DivisionByZero);
         }
-        Self::new(self.currency, self.amount / rhs)
+        Ok(Self::new(self.currency, self.amount / rhs))
     }
 }
 
-impl std::ops::DivAssign<Decimal> for Money {
-    fn div_assign(&mut self, rhs: Decimal) {
-        if rhs.is_zero() {
-            panic!("Division by zero");
-        }
-        self.amount /= rhs;
-    }
-}
 
 impl std::iter::Sum for Money {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {

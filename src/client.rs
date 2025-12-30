@@ -1,11 +1,18 @@
+use arc_swap::ArcSwap;
+use async_trait::async_trait;
+use governor::{
+    clock::DefaultClock,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter as GovRateLimiter,
+};
 use std::{
+    num::NonZeroU32,
     sync::atomic::{AtomicU64, Ordering},
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use bon::Builder;
-use leaky_bucket::RateLimiter;
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
 use tracing::{debug, info, instrument};
@@ -15,6 +22,109 @@ use crate::{
     models::{AccountConfig, Currency},
     session::{AuthState, Session},
 };
+
+type DegiroRateLimiter = GovRateLimiter<NotKeyed, InMemoryState, DefaultClock>;
+
+fn build_limiter(policy: &RatePolicy) -> DegiroRateLimiter {
+    DegiroRateLimiter::direct(policy.quota())
+}
+
+fn default_rate_limiter_swap() -> Arc<ArcSwap<DegiroRateLimiter>> {
+    Arc::new(ArcSwap::from_pointee(build_limiter(&RatePolicy::default())))
+}
+
+fn default_rate_policy_lock() -> Arc<parking_lot::RwLock<RatePolicy>> {
+    Arc::new(parking_lot::RwLock::new(RatePolicy::default()))
+}
+
+fn default_retry_policy_lock() -> Arc<parking_lot::RwLock<RetryPolicy>> {
+    Arc::new(parking_lot::RwLock::new(RetryPolicy::default()))
+}
+
+#[derive(Debug, Clone)]
+pub struct RatePolicy {
+    pub requests_per_second: NonZeroU32,
+    pub burst: NonZeroU32,
+}
+
+impl RatePolicy {
+    #[must_use]
+    pub fn new(requests_per_second: NonZeroU32, burst: NonZeroU32) -> Self {
+        Self {
+            requests_per_second,
+            burst,
+        }
+    }
+
+    pub fn per_second(requests_per_second: u32, burst: u32) -> Result<Self, ClientError> {
+        let requests_per_second = NonZeroU32::new(requests_per_second).ok_or_else(|| {
+            ClientError::InvalidRequest(
+                "rate policy requires requests_per_second greater than zero".to_string(),
+            )
+        })?;
+        let burst = NonZeroU32::new(burst).ok_or_else(|| {
+            ClientError::InvalidRequest("rate policy requires burst greater than zero".to_string())
+        })?;
+        Ok(Self::new(requests_per_second, burst))
+    }
+
+    fn quota(&self) -> Quota {
+        Quota::per_second(self.requests_per_second).allow_burst(self.burst)
+    }
+}
+
+impl Default for RatePolicy {
+    fn default() -> Self {
+        Self::new(
+            NonZeroU32::new(8).expect("default requests_per_second"),
+            NonZeroU32::new(16).expect("default burst"),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RetryPolicy {
+    pub min_delay: Duration,
+    pub max_delay: Duration,
+    pub max_retries: usize,
+}
+
+impl RetryPolicy {
+    pub fn new(
+        min_delay: Duration,
+        max_delay: Duration,
+        max_retries: usize,
+    ) -> Result<Self, ClientError> {
+        if max_delay < min_delay {
+            return Err(ClientError::InvalidRequest(
+                "retry policy requires max_delay to be greater than or equal to min_delay"
+                    .to_string(),
+            ));
+        }
+        Ok(Self {
+            min_delay,
+            max_delay,
+            max_retries,
+        })
+    }
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            min_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(10),
+            max_retries: 5,
+        }
+    }
+}
+
+#[async_trait]
+pub trait CompanyProfileCache: Send + Sync {
+    async fn should_skip(&self, product_id: &str) -> bool;
+    async fn record_failure(&self, product_id: &str, error: &ClientError);
+    async fn record_success(&self, product_id: &str);
+}
 
 #[derive(Debug, Clone)]
 pub struct HealthStatus {
@@ -40,8 +150,12 @@ pub struct Degiro {
     pub cookie_jar: Arc<reqwest_cookie_store::CookieStoreMutex>,
     #[builder(default = reqwest::ClientBuilder::new().https_only(true).cookie_provider(Arc::clone(&cookie_jar)).build().expect("Failed to build HTTP client"))]
     pub(crate) http_client: reqwest::Client,
-    #[builder(default = Arc::new(RateLimiter::builder().initial(12).max(12).refill(12).interval(Duration::from_millis(1000)).build()))]
-    pub(crate) rate_limiter: Arc<RateLimiter>,
+    #[builder(skip = default_rate_limiter_swap())]
+    pub(crate) rate_limiter: Arc<ArcSwap<DegiroRateLimiter>>,
+    #[builder(skip = default_rate_policy_lock())]
+    rate_policy: Arc<parking_lot::RwLock<RatePolicy>>,
+    #[builder(skip = default_retry_policy_lock())]
+    retry_policy: Arc<parking_lot::RwLock<RetryPolicy>>,
     #[builder(skip = Arc::new(AtomicU64::new(0)))]
     total_requests: Arc<AtomicU64>,
     #[builder(skip = Arc::new(AtomicU64::new(0)))]
@@ -50,6 +164,9 @@ pub struct Degiro {
     last_successful_request: Arc<parking_lot::RwLock<Option<Instant>>>,
     #[builder(skip = Arc::new(parking_lot::RwLock::new(None)))]
     last_error: Arc<parking_lot::RwLock<Option<(Instant, String)>>>,
+    #[builder(skip = Arc::new(parking_lot::RwLock::new(None)))]
+    company_profile_cache:
+        Arc<parking_lot::RwLock<Option<Arc<dyn CompanyProfileCache + Send + Sync + 'static>>>>,
 }
 
 impl Degiro {
@@ -105,12 +222,29 @@ impl Degiro {
         self.session.set_client_id(account_id);
     }
 
+    pub fn fx_pair_product_id(&self, base: Currency, quote: Currency) -> Option<String> {
+        self.session.cached_fx_pair_product(base, quote)
+    }
+
     // pub(crate) fn account_config(&self) -> parking_lot::RwLockReadGuard<Option<AccountConfig>> {
     //     self.account_config.read()
     // }
 
     pub(crate) fn set_account_config(&self, config: AccountConfig) {
         self.session.set_account_config(config);
+    }
+
+    pub fn set_company_profile_cache(
+        &self,
+        cache: Option<Arc<dyn CompanyProfileCache + Send + Sync + 'static>>,
+    ) {
+        *self.company_profile_cache.write() = cache;
+    }
+
+    pub fn company_profile_cache(
+        &self,
+    ) -> Option<Arc<dyn CompanyProfileCache + Send + Sync + 'static>> {
+        self.company_profile_cache.read().clone()
     }
 
     pub fn load_from_env() -> Result<Self, ClientError> {
@@ -145,18 +279,14 @@ impl Degiro {
             totp_secret: secret,
             http_client,
             cookie_jar,
-            rate_limiter: Arc::new(
-                RateLimiter::builder()
-                    .initial(12)
-                    .max(12)
-                    .refill(12)
-                    .interval(Duration::from_millis(1000))
-                    .build(),
-            ),
+            rate_limiter: default_rate_limiter_swap(),
+            rate_policy: default_rate_policy_lock(),
+            retry_policy: default_retry_policy_lock(),
             total_requests: Arc::new(AtomicU64::new(0)),
             failed_requests: Arc::new(AtomicU64::new(0)),
             last_successful_request: Arc::new(parking_lot::RwLock::new(None)),
             last_error: Arc::new(parking_lot::RwLock::new(None)),
+            company_profile_cache: Arc::new(parking_lot::RwLock::new(None)),
         };
 
         // Try to load saved session (skip in test mode)
@@ -165,27 +295,39 @@ impl Degiro {
             debug!("Failed to load saved session: {}", e);
         }
 
-        Ok(client)
-    }
+       Ok(client)
+   }
 
-    /// Load session from disk if available
-    pub fn load_session(&self) -> Result<bool, ClientError> {
-        self.session
-            .load_session(&self.username, &self.password)
-            .map_err(ClientError::AuthError)
-    }
+   /// Load session from disk if available
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use degiro_ox::storage::decrypt_session and handle I/O yourself"
+    )]
+   pub fn load_session(&self) -> Result<bool, ClientError> {
+       self.session
+           .load_session(&self.username, &self.password)
+           .map_err(ClientError::AuthError)
+   }
 
-    /// Save current session to disk
-    pub fn save_session(&self) -> Result<(), ClientError> {
-        self.session
-            .save_session(&self.username, &self.password)
-            .map_err(ClientError::AuthError)
-    }
+   /// Save current session to disk
+    #[deprecated(
+        since = "0.2.0",
+        note = "Use degiro_ox::storage::encrypt_session and handle I/O yourself"
+    )]
+   pub fn save_session(&self) -> Result<(), ClientError> {
+       self.session
+           .save_session(&self.username, &self.password)
+           .map_err(ClientError::AuthError)
+   }
 
-    /// Clear saved session from disk
-    pub fn clear_saved_session(&self) -> Result<(), ClientError> {
-        self.session
-            .clear_saved_session()
+   /// Clear saved session from disk
+    #[deprecated(
+        since = "0.2.0",
+        note = "Handle session file deletion yourself"
+    )]
+   pub fn clear_saved_session(&self) -> Result<(), ClientError> {
+       self.session
+           .clear_saved_session()
             .map_err(ClientError::AuthError)
     }
 
@@ -217,8 +359,7 @@ impl Degiro {
     /// Get current health status
     pub fn health_status(&self) -> HealthStatus {
         let session_state = self.session.get_state();
-        // leaky-bucket doesn't expose available permits, so we use a default approximation
-        let rate_limit_remaining = 12u32; // Max capacity assumption
+        let rate_limit_remaining = self.rate_policy.read().burst.get();
 
         HealthStatus {
             session_valid: session_state.is_valid(),
@@ -240,7 +381,43 @@ impl Degiro {
     }
 
     pub(crate) async fn acquire_limit(&self) {
-        self.rate_limiter.acquire_one().await
+        self.rate_limiter.load().until_ready().await;
+    }
+
+    pub fn rate_policy(&self) -> RatePolicy {
+        self.rate_policy.read().clone()
+    }
+
+    pub fn retry_policy(&self) -> RetryPolicy {
+        self.retry_policy.read().clone()
+    }
+
+    pub fn set_rate_policy(&self, policy: RatePolicy) -> Result<(), ClientError> {
+        let limiter = Arc::new(build_limiter(&policy));
+        self.rate_limiter.store(limiter);
+        *self.rate_policy.write() = policy;
+        Ok(())
+    }
+
+    pub fn set_retry_policy(&self, policy: RetryPolicy) -> Result<(), ClientError> {
+        if policy.max_delay < policy.min_delay {
+            return Err(ClientError::InvalidRequest(
+                "retry policy requires max_delay to be greater than or equal to min_delay"
+                    .to_string(),
+            ));
+        }
+        *self.retry_policy.write() = policy;
+        Ok(())
+    }
+
+    pub fn with_rate_policy(self, policy: RatePolicy) -> Result<Self, ClientError> {
+        self.set_rate_policy(policy)?;
+        Ok(self)
+    }
+
+    pub fn with_retry_policy(self, policy: RetryPolicy) -> Result<Self, ClientError> {
+        self.set_retry_policy(policy)?;
+        Ok(self)
     }
 
     pub fn is_authorized(&self) -> bool {

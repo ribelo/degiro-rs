@@ -1,4 +1,5 @@
 use chrono::{DateTime, FixedOffset, NaiveDate};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
@@ -14,25 +15,38 @@ use crate::{
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
-    pub auto_fx_fee_in_base_currency: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub auto_fx_fee_in_base_currency: Decimal,
     #[serde(rename = "buysell")]
     pub transaction_type: TransactionType,
     pub counter_party: Option<String>,
     pub date: DateTime<FixedOffset>,
-    pub fee_in_base_currency: Option<f64>,
-    pub fx_rate: f64,
-    pub gross_fx_rate: f64,
+    #[serde(with = "rust_decimal::serde::float_option")]
+    pub fee_in_base_currency: Option<Decimal>,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub fx_rate: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub gross_fx_rate: Decimal,
     pub id: i32,
-    pub nett_fx_rate: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub nett_fx_rate: Decimal,
     pub order_type_id: Option<i8>,
-    pub price: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub price: Decimal,
     pub product_id: i32,
+    /// Quantity is always reported as a positive number by Degiro; consumers should apply the
+    /// correct sign based on `transaction_type` (e.g., subtract on sells).
     pub quantity: i32,
-    pub total: f64,
-    pub total_fees_in_base_currency: f64,
-    pub total_in_base_currency: f64,
-    pub total_plus_all_fees_in_base_currency: f64,
-    pub total_plus_fee_in_base_currency: f64,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_fees_in_base_currency: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_in_base_currency: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_plus_all_fees_in_base_currency: Decimal,
+    #[serde(with = "rust_decimal::serde::float")]
+    pub total_plus_fee_in_base_currency: Decimal,
     pub trading_venue: Option<String>,
     pub transaction_type_id: i32,
     pub transfered: bool,
@@ -102,6 +116,25 @@ impl Degiro {
         from_date: impl Into<NaiveDate> + Send,
         to_date: impl Into<NaiveDate> + Send,
     ) -> Result<Transactions, ClientError> {
+        self.transactions_with_grouping(from_date, to_date, false)
+            .await
+    }
+
+    pub async fn transactions_grouped(
+        &self,
+        from_date: impl Into<NaiveDate> + Send,
+        to_date: impl Into<NaiveDate> + Send,
+    ) -> Result<Transactions, ClientError> {
+        self.transactions_with_grouping(from_date, to_date, true)
+            .await
+    }
+
+    pub async fn transactions_with_grouping(
+        &self,
+        from_date: impl Into<NaiveDate> + Send,
+        to_date: impl Into<NaiveDate> + Send,
+        group_by_order: bool,
+    ) -> Result<Transactions, ClientError> {
         let url = format!("{REPORTING_URL}{TRANSACTIONS_PATH}");
 
         let mut response_data = self
@@ -111,7 +144,10 @@ impl Degiro {
                     .query("intAccount", self.int_account().to_string())
                     .query("fromDate", from_date.into().format("%d/%m/%Y").to_string())
                     .query("toDate", to_date.into().format("%d/%m/%Y").to_string())
-                    .query("groupTransactionsByOrder", "1"),
+                    .query(
+                        "groupTransactionsByOrder",
+                        if group_by_order { "1" } else { "0" },
+                    ),
             )
             .await?;
 
