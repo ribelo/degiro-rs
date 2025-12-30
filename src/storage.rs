@@ -25,6 +25,7 @@ use aes_gcm::{
 use argon2::Argon2;
 use base64::{engine::general_purpose, Engine as _};
 use rand::rngs::OsRng;
+use rand::RngCore;
 use thiserror::Error;
 
 use crate::session::SessionState;
@@ -48,19 +49,16 @@ pub enum StorageError {
     Expired,
 }
 
-/// Derive an encryption key from username and password using Argon2.
-fn derive_key(username: &str, password: &str) -> Key<Aes256Gcm> {
-    let argon2 = Argon2::default();
+const SALT_LEN: usize = 16;
+const NONCE_LEN: usize = 12;
 
-    // Create a deterministic salt from username to ensure consistent key derivation
-    let mut salt_input = [0u8; 16];
-    let username_bytes = username.as_bytes();
-    let len = username_bytes.len().min(16);
-    salt_input[..len].copy_from_slice(&username_bytes[..len]);
+/// Derive an encryption key from password and salt using Argon2.
+fn derive_key(password: &str, salt: &[u8]) -> Key<Aes256Gcm> {
+    let argon2 = Argon2::default();
 
     let mut output_key_material = [0u8; 32];
     argon2
-        .hash_password_into(password.as_bytes(), &salt_input, &mut output_key_material)
+        .hash_password_into(password.as_bytes(), salt, &mut output_key_material)
         .expect("Failed to derive key");
 
     *Key::<Aes256Gcm>::from_slice(&output_key_material)
@@ -68,16 +66,22 @@ fn derive_key(username: &str, password: &str) -> Key<Aes256Gcm> {
 
 /// Encrypt a [`SessionState`] into bytes suitable for storage.
 ///
-/// Uses AES-256-GCM with a key derived from username and password via Argon2.
-/// The returned bytes include a random nonce and can be safely written to disk or database.
+/// Uses AES-256-GCM with a key derived from password via Argon2 with a random salt.
+/// The returned bytes include the salt and nonce as prefixes and can be safely written to disk.
+///
+/// Format: `[salt: 16 bytes][nonce: 12 bytes][ciphertext: variable]`
 pub fn encrypt_session(
     state: &SessionState,
-    username: &str,
+    _username: &str,
     password: &str,
 ) -> Result<Vec<u8>, StorageError> {
     let json = serde_json::to_string(state)?;
 
-    let key = derive_key(username, password);
+    // Generate random salt for key derivation
+    let mut salt = [0u8; SALT_LEN];
+    OsRng.fill_bytes(&mut salt);
+
+    let key = derive_key(password, &salt);
     let cipher = Aes256Gcm::new(&key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
@@ -85,7 +89,9 @@ pub fn encrypt_session(
         .encrypt(&nonce, json.as_bytes())
         .map_err(|e| StorageError::Encryption(e.to_string()))?;
 
-    let mut combined = Vec::with_capacity(nonce.len() + encrypted.len());
+    // Combine: salt + nonce + ciphertext
+    let mut combined = Vec::with_capacity(SALT_LEN + NONCE_LEN + encrypted.len());
+    combined.extend_from_slice(&salt);
     combined.extend_from_slice(&nonce);
     combined.extend_from_slice(&encrypted);
 
@@ -105,23 +111,24 @@ pub fn encrypt_session_base64(
 /// Decrypt a [`SessionState`] from bytes.
 ///
 /// The input should be the raw bytes produced by [`encrypt_session`].
+/// Format expected: `[salt: 16 bytes][nonce: 12 bytes][ciphertext: variable]`
 pub fn decrypt_session(
     data: &[u8],
-    username: &str,
+    _username: &str,
     password: &str,
 ) -> Result<SessionState, StorageError> {
-    const NONCE_LEN: usize = 12; // AES-GCM nonce size
-
-    if data.len() < NONCE_LEN {
+    let min_len = SALT_LEN + NONCE_LEN;
+    if data.len() < min_len {
         return Err(StorageError::InvalidFormat(
-            "Data too short to contain nonce".to_string(),
+            "Data too short to contain salt and nonce".to_string(),
         ));
     }
 
-    let (nonce_bytes, ciphertext) = data.split_at(NONCE_LEN);
+    let (salt, rest) = data.split_at(SALT_LEN);
+    let (nonce_bytes, ciphertext) = rest.split_at(NONCE_LEN);
     let nonce = aes_gcm::Nonce::from_slice(nonce_bytes);
 
-    let key = derive_key(username, password);
+    let key = derive_key(password, salt);
     let cipher = Aes256Gcm::new(&key);
 
     let decrypted = cipher
