@@ -65,7 +65,10 @@ impl<'de> Deserialize<'de> for Exchange {
             "892" | "TOR" => Exchange::TOR,
             "454" | "HKS" => Exchange::HKS,
             other => {
-                tracing::warn!(exchange_id = other, "Unknown exchange id; defaulting to Unknown");
+                tracing::warn!(
+                    exchange_id = other,
+                    "Unknown exchange id; defaulting to Unknown"
+                );
                 Exchange::Unknown
             }
         };

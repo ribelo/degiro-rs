@@ -1,3 +1,4 @@
+use reqwest::StatusCode;
 use serde::Deserialize;
 use std::fmt::Display;
 use thiserror::Error;
@@ -150,6 +151,9 @@ pub enum ResponseError {
 
     #[error("Invalid response: {0}")]
     Invalid(String),
+
+    #[error("HTTP {status}: {body}")]
+    HttpStatus { status: StatusCode, body: String },
 }
 
 impl ResponseError {
@@ -170,6 +174,13 @@ impl ResponseError {
 
     pub fn network(reason: impl Into<String>) -> Self {
         Self::Invalid(format!("Network error: {}", reason.into()))
+    }
+
+    pub fn http_status(status: StatusCode, body: impl Into<String>) -> Self {
+        Self::HttpStatus {
+            status,
+            body: body.into(),
+        }
     }
 }
 

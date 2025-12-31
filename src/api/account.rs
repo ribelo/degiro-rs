@@ -1,9 +1,11 @@
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use chrono::{NaiveDate, Utc};
 use futures_concurrency::future::TryJoin;
 use rust_decimal::prelude::FromPrimitive;
 use rust_decimal::Decimal;
+use tracing::warn;
 
 use crate::{
     client::Degiro,
@@ -11,11 +13,11 @@ use crate::{
     http::{HttpClient, HttpRequest},
     models::{
         AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType,
-        Money, Period,
+        Currency, Money, Period,
     },
     paths::{
         ACCOUNT_CONFIG_PATH, ACCOUNT_INFO_PATH, ACCOUNT_OVERVIEW_PATH, BASE_API_URL,
-        CASH_ACCOUNT_REPORT_URL, PA_URL, REPORTING_URL,
+        CASH_ACCOUNT_REPORT_URL, PA_URL, REPORTING_URL, TRANSACTION_REPORT_URL,
     },
     session::AuthState,
 };
@@ -53,6 +55,31 @@ impl Degiro {
     }
 }
 
+fn parse_currency_pair_key(pair: &str) -> Option<(Currency, Currency)> {
+    fn parse_currency(code: &str) -> Option<Currency> {
+        let trimmed = code.trim();
+        Currency::from_str(trimmed)
+            .ok()
+            .or_else(|| Currency::from_str(&trimmed.to_ascii_uppercase()).ok())
+    }
+
+    let normalized = pair.trim().replace('-', "/").replace('_', "/");
+    if let Some((lhs, rhs)) = normalized.split_once('/') {
+        let base = parse_currency(lhs)?;
+        let quote = parse_currency(rhs)?;
+        return Some((base, quote));
+    }
+
+    if normalized.len() == 6 {
+        let (lhs, rhs) = normalized.split_at(3);
+        let base = parse_currency(lhs)?;
+        let quote = parse_currency(rhs)?;
+        return Some((base, quote));
+    }
+
+    None
+}
+
 impl Degiro {
     pub async fn account_data(&self) -> Result<AccountData, ClientError> {
         let url = format!("{PA_URL}client");
@@ -84,16 +111,49 @@ impl Degiro {
             .remove("data")
             .ok_or_else(|| DataError::missing_field("data"))?;
 
-        // Extract and store currency rates in session
-        let currency_rates: HashMap<String, Decimal> = account_info
-            .currency_pairs
-            .iter()
-            .map(|(pair_name, currency_pair)| (pair_name.clone(), currency_pair.price))
-            .collect();
+        // Extract and store currency rates and FX pair product ids in session
+        let mut currency_rates = HashMap::new();
+        let mut fx_pairs = Vec::new();
+
+        for (pair_name, currency_pair) in &account_info.currency_pairs {
+            currency_rates.insert(pair_name.clone(), currency_pair.price);
+            if let Some((from, to)) = parse_currency_pair_key(pair_name) {
+                fx_pairs.push(((from, to), currency_pair.id.to_string()));
+            } else {
+                warn!(
+                    pair = pair_name,
+                    id = currency_pair.id,
+                    "Unable to parse currency pair key from account info"
+                );
+            }
+        }
 
         self.session.set_currency_rates(currency_rates);
+        self.session.set_fx_pair_products(fx_pairs);
 
         Ok(account_info)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_currency_pairs_handles_common_formats() {
+        assert_eq!(
+            parse_currency_pair_key("EUR/USD"),
+            Some((Currency::EUR, Currency::USD))
+        );
+        assert_eq!(
+            parse_currency_pair_key("eurusd"),
+            Some((Currency::EUR, Currency::USD))
+        );
+        assert_eq!(
+            parse_currency_pair_key("EUR-CHF"),
+            Some((Currency::EUR, Currency::CHF))
+        );
+        assert!(parse_currency_pair_key("foo").is_none());
     }
 }
 
@@ -165,7 +225,26 @@ impl Degiro {
         from_date: &NaiveDate,
         to_date: &NaiveDate,
     ) -> Result<String, ClientError> {
-        let url = format!("{CASH_ACCOUNT_REPORT_URL}/csv");
+        let url = format!("{CASH_ACCOUNT_REPORT_URL}csv");
+
+        self.request_text(
+            HttpRequest::get(url)
+                .query("sessionId", self.session_id())
+                .query("intAccount", self.int_account().to_string())
+                .query("country", "PL")
+                .query("lang", "pl")
+                .query("fromDate", from_date.format("%d/%m/%Y").to_string())
+                .query("toDate", to_date.format("%d/%m/%Y").to_string()),
+        )
+        .await
+    }
+
+    pub async fn transaction_report(
+        &self,
+        from_date: &NaiveDate,
+        to_date: &NaiveDate,
+    ) -> Result<String, ClientError> {
+        let url = format!("{TRANSACTION_REPORT_URL}csv");
 
         self.request_text(
             HttpRequest::get(url)
@@ -246,6 +325,26 @@ mod test {
             )
             .await
             .expect("Failed to get cash report");
+        dbg!(report);
+    }
+
+    #[tokio::test]
+    #[ignore = "Integration test - hits real API"]
+    async fn test_transaction_report() {
+        let client = Degiro::load_from_env()
+            .expect("Failed to load Degiro client from environment variables");
+        client.login().await.expect("Failed to login to Degiro");
+        client
+            .account_config()
+            .await
+            .expect("Failed to get account configuration");
+        let report = client
+            .transaction_report(
+                &NaiveDate::from_ymd_opt(2024, 10, 1).expect("Failed to create start date"),
+                &NaiveDate::from_ymd_opt(2024, 11, 28).expect("Failed to create end date"),
+            )
+            .await
+            .expect("Failed to get transaction report");
         dbg!(report);
     }
 

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::models::{AllowedOrderTypes, OrderTimeTypes};
 
-use super::{risk::RiskCategory, CompanyProfile, Exchange};
+use super::{risk::RiskCategory, CompanyProfile, Exchange, SeriesIdentifier, SeriesIdentifierKind};
 use crate::serde_utils::f64_from_string_or_number;
 
 #[derive(Clone, Debug, Deserialize, Derivative, Serialize, PartialEq)]
@@ -59,6 +59,34 @@ pub struct Product {
 }
 
 impl Product {
+    fn make_series_identifier(
+        value: &Option<String>,
+        kind: &Option<String>,
+    ) -> Option<SeriesIdentifier> {
+        let raw_value = value.as_ref()?.trim();
+        if raw_value.is_empty() {
+            return None;
+        }
+        let kind = kind
+            .as_deref()
+            .map(SeriesIdentifierKind::from_raw)
+            .unwrap_or(SeriesIdentifierKind::IssueId);
+        Some(SeriesIdentifier::new(kind, raw_value.to_string()))
+    }
+
+    pub fn primary_series_identifier(&self) -> Option<SeriesIdentifier> {
+        Self::make_series_identifier(&self.vwd_id, &self.vwd_identifier_type)
+    }
+
+    pub fn secondary_series_identifier(&self) -> Option<SeriesIdentifier> {
+        Self::make_series_identifier(&self.vwd_id_secondary, &self.vwd_identifier_type_secondary)
+    }
+
+    pub fn first_series_identifier(&self) -> Option<SeriesIdentifier> {
+        self.primary_series_identifier()
+            .or_else(|| self.secondary_series_identifier())
+    }
+
     pub fn is_tradable(&self) -> bool {
         self.tradable && self.active
     }

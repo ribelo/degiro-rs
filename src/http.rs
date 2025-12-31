@@ -1,7 +1,7 @@
 use backon::{ExponentialBuilder, Retryable};
 use reqwest::{header, Method, Response, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
@@ -154,10 +154,11 @@ impl Degiro {
         self.ensure_auth_level(req.auth_level).await?;
 
         // Create the retry policy
+        let retry_cfg = self.retry_policy();
         let retry_policy = ExponentialBuilder::default()
-            .with_min_delay(Duration::from_millis(100))
-            .with_max_delay(Duration::from_secs(10))
-            .with_max_times(3);
+            .with_min_delay(retry_cfg.min_delay)
+            .with_max_delay(retry_cfg.max_delay)
+            .with_max_times(retry_cfg.max_retries);
 
         info!("Executing HTTP request with retry policy");
 
@@ -268,20 +269,6 @@ impl Degiro {
                         status.canonical_reason().unwrap_or("")
                     );
 
-                    // For 429, check for Retry-After header
-                    if status == StatusCode::TOO_MANY_REQUESTS {
-                        if let Some(retry_after) = res.headers().get("retry-after") {
-                            if let Ok(retry_str) = retry_after.to_str() {
-                                if let Ok(retry_seconds) = retry_str.parse::<u64>() {
-                                    info!(
-                                        "Rate limited, waiting {} seconds before retry",
-                                        retry_seconds
-                                    );
-                                    tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
-                                }
-                            }
-                        }
-                    }
                     return Err(ClientError::RequestError(err));
                 }
                 // Don't retry client errors (4xx except 429)
@@ -292,18 +279,14 @@ impl Degiro {
                         status.canonical_reason().unwrap_or("")
                     );
 
-                    // Try to parse error response
-                    if let Ok(error_response) = res.json::<ApiErrorResponse>().await {
+                    let body_text = res.text().await.unwrap_or_default();
+                    if let Ok(error_response) = serde_json::from_str::<ApiErrorResponse>(&body_text)
+                    {
                         error!("API error response: {:?}", error_response);
                         return Err(ClientError::ApiError(error_response));
                     }
 
-                    return Err(ResponseError::invalid(format!(
-                        "HTTP {} error: {}",
-                        status.as_u16(),
-                        err
-                    ))
-                    .into());
+                    return Err(ResponseError::http_status(status, body_text).into());
                 }
             }
         }

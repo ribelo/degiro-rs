@@ -11,15 +11,19 @@ where
 {
     use serde::de::Error as DeError;
 
-    match Value::deserialize(deserializer)? {
-        Value::Number(n) => n
-            .as_f64()
-            .ok_or_else(|| DeError::custom("Failed to convert number to f64")),
-        Value::String(s) => s.parse::<f64>().map_err(DeError::custom),
-        Value::Null => Ok(0.0),
-        other => Err(DeError::custom(format!(
-            "Expected number or string for float field, received {other:?}"
-        ))),
+    if deserializer.is_human_readable() {
+        match Value::deserialize(deserializer)? {
+            Value::Number(n) => n
+                .as_f64()
+                .ok_or_else(|| DeError::custom("Failed to convert number to f64")),
+            Value::String(s) => s.parse::<f64>().map_err(DeError::custom),
+            Value::Null => Ok(0.0),
+            other => Err(DeError::custom(format!(
+                "Expected number or string for float field, received {other:?}"
+            ))),
+        }
+    } else {
+        f64::deserialize(deserializer)
     }
 }
 
@@ -30,17 +34,21 @@ where
 {
     use serde::de::Error as DeError;
 
-    match Value::deserialize(deserializer)? {
-        Value::Number(n) => n
-            .as_f64()
-            .and_then(Decimal::from_f64)
-            .ok_or_else(|| DeError::custom("Failed to convert number to Decimal")),
-        Value::String(s) => {
-            Decimal::from_str(&s).map_err(|_| DeError::custom("Invalid decimal string"))
+    if deserializer.is_human_readable() {
+        match Value::deserialize(deserializer)? {
+            Value::Number(n) => n
+                .as_f64()
+                .and_then(Decimal::from_f64)
+                .ok_or_else(|| DeError::custom("Failed to convert number to Decimal")),
+            Value::String(s) => {
+                Decimal::from_str(&s).map_err(|_| DeError::custom("Invalid decimal string"))
+            }
+            Value::Null => Ok(Decimal::ZERO),
+            other => Err(DeError::custom(format!(
+                "Expected number or string for decimal field, received {other:?}"
+            ))),
         }
-        Value::Null => Ok(Decimal::ZERO),
-        other => Err(DeError::custom(format!(
-            "Expected number or string for decimal field, received {other:?}"
-        ))),
+    } else {
+        <Decimal as Deserialize>::deserialize(deserializer)
     }
 }

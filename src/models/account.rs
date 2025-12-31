@@ -27,7 +27,9 @@ pub struct AccountData {
     pub id: i32,
     pub int_account: i32,
     pub is_allocation_available: bool,
+    #[serde(default)]
     pub is_am_client_active: bool,
+    #[serde(default)]
     pub is_collective_portfolio: bool,
     pub is_isk_client: bool,
     pub is_withdrawal_available: bool,
@@ -36,6 +38,9 @@ pub struct AccountData {
     pub logged_in_person_id: i32,
     pub member_code: String,
     pub username: String,
+    /// Catch-all for unknown/new fields from the API
+    #[serde(flatten)]
+    pub extra: HashMap<String, serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -181,6 +186,7 @@ pub enum AccountTransactionType {
     CashFundTransaction,
     Payment,
     FlatexCashSweep,
+    CashFundNavChange,
     Unknown(String),
 }
 
@@ -196,8 +202,12 @@ impl<'de> Deserialize<'de> for AccountTransactionType {
             "CASH_FUND_TRANSACTION" => AccountTransactionType::CashFundTransaction,
             "PAYMENT" => AccountTransactionType::Payment,
             "FLATEX_CASH_SWEEP" => AccountTransactionType::FlatexCashSweep,
+            "CASH_FUND_NAV_CHANGE" => AccountTransactionType::CashFundNavChange,
             other => {
-                warn!(transaction_type = other, "Unknown account transaction type encountered");
+                warn!(
+                    transaction_type = other,
+                    "Unknown account transaction type encountered"
+                );
                 AccountTransactionType::Unknown(raw)
             }
         };

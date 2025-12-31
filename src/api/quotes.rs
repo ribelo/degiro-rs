@@ -1,11 +1,12 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     client::Degiro,
     error::{ClientError, DataError, DateTimeError, ResponseError},
     http::{HttpClient, HttpRequest},
-    models::Period,
+    models::{Currency, Period, SeriesIdentifier, SeriesIdentifierKind},
     serde_utils::f64_from_string_or_number,
 };
 
@@ -39,6 +40,45 @@ pub struct Candle {
 pub struct Candles {
     pub interval: Period,
     pub data: Vec<Candle>,
+}
+
+fn parse_chart_response(raw: &str) -> Result<Value, ClientError> {
+    let trimmed = raw.trim();
+    match serde_json::from_str::<Value>(trimmed) {
+        Ok(value) => Ok(value),
+        Err(first_err) => {
+            let first = trimmed.find('{');
+            let last = trimmed.rfind('}');
+            if let (Some(start), Some(end)) = (first, last) {
+                if end >= start {
+                    let candidate = &trimmed[start..=end];
+                    if let Ok(value) = serde_json::from_str(candidate) {
+                        return Ok(value);
+                    }
+                }
+            }
+            Err(ClientError::SerdeError(first_err))
+        }
+    }
+}
+
+fn parse_chart_datetime(value: &Value) -> Result<NaiveDateTime, ClientError> {
+    if let Some(text) = value.as_str() {
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(text) {
+            return Ok(dt.naive_utc());
+        }
+        match NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S") {
+            Ok(dt) => return Ok(dt),
+            Err(err) => {
+                return Err(ClientError::DateTimeError(DateTimeError::parse_error(
+                    text,
+                    err.to_string(),
+                )));
+            }
+        }
+    }
+
+    serde_json::from_value::<NaiveDateTime>(value.clone()).map_err(ClientError::from)
 }
 
 impl Candles {
@@ -191,41 +231,146 @@ fn ohlc_vec_to_candles(
 }
 
 impl Degiro {
-    pub async fn quotes_by_id(
+    pub async fn resolve_vwd_id_by_product_id(
+        &self,
+        product_id: impl AsRef<str>,
+    ) -> Result<Option<SeriesIdentifier>, ClientError> {
+        let product_id = product_id.as_ref();
+        if let Some(series) = self.session.cached_series_by_product(product_id) {
+            return Ok(Some(series));
+        }
+
+        let Some(product) = self.product(product_id.to_string()).await? else {
+            return Ok(None);
+        };
+
+        self.cache_product_identifiers(&product);
+
+        Ok(product.first_series_identifier())
+    }
+
+    pub async fn resolve_vwd_id_by_isin(
+        &self,
+        isin: impl AsRef<str>,
+    ) -> Result<Option<SeriesIdentifier>, ClientError> {
+        let isin = isin.as_ref();
+
+        if let Some(product_id) = self.session.cached_product_id_by_isin(isin) {
+            if let Some(series) = self.session.cached_series_by_product(&product_id) {
+                return Ok(Some(series));
+            }
+            if let Some(vwd_id) = self.resolve_vwd_id_by_product_id(&product_id).await? {
+                return Ok(Some(vwd_id));
+            }
+        }
+
+        let Some(product) = self.product(isin.to_string()).await? else {
+            return Ok(None);
+        };
+
+        self.cache_product_identifiers(&product);
+
+        Ok(product.first_series_identifier())
+    }
+
+    pub async fn quotes_by_product_id(
+        &self,
+        product_id: impl AsRef<str>,
+        period: Period,
+        interval: Period,
+    ) -> Result<Option<Candles>, ClientError> {
+        let product_id = product_id.as_ref();
+        let Some(series) = self.resolve_vwd_id_by_product_id(product_id).await? else {
+            return Ok(None);
+        };
+        self.quotes_with_series(&series, period, interval).await
+    }
+
+    pub async fn quotes_by_isin(
         &self,
         isin: impl AsRef<str>,
         period: Period,
         interval: Period,
     ) -> Result<Option<Candles>, ClientError> {
-        let Some(product) = self.product(isin.as_ref()).await? else {
+        let isin = isin.as_ref();
+        let Some(series) = self.resolve_vwd_id_by_isin(isin).await? else {
             return Ok(None);
         };
-        let Some(vwd_id) = product.vwd_id else {
-            return Ok(None);
-        };
-        self.quotes(vwd_id.as_str(), period, interval).await
+        self.quotes_with_series(&series, period, interval).await
     }
+
+    pub async fn quotes_fx(
+        &self,
+        base: Currency,
+        quote: Currency,
+        period: Period,
+        interval: Period,
+    ) -> Result<Option<Candles>, ClientError> {
+        if base == quote {
+            return Ok(None);
+        }
+
+        if self.session.cached_fx_pair_product(base, quote).is_none() {
+            let _ = self.account_info().await?;
+        }
+
+        if let Some(product_id) = self.session.cached_fx_pair_product(base, quote) {
+            return self
+                .quotes_by_product_id(product_id, period, interval)
+                .await;
+        }
+
+        Ok(None)
+    }
+
     pub async fn quotes(
         &self,
         vwd_id: impl AsRef<str>,
         period: Period,
         interval: Period,
     ) -> Result<Option<Candles>, ClientError> {
-        let vwd_id = vwd_id.as_ref();
+        self.quotes_with_kind(
+            SeriesIdentifierKind::IssueId,
+            vwd_id.as_ref(),
+            period,
+            interval,
+        )
+        .await
+    }
+
+    pub async fn quotes_with_kind(
+        &self,
+        kind: SeriesIdentifierKind,
+        identifier: impl AsRef<str>,
+        period: Period,
+        interval: Period,
+    ) -> Result<Option<Candles>, ClientError> {
+        let series = SeriesIdentifier::new(kind, identifier.as_ref());
+        self.quotes_with_series(&series, period, interval).await
+    }
+
+    pub async fn quotes_with_series(
+        &self,
+        series: &SeriesIdentifier,
+        period: Period,
+        interval: Period,
+    ) -> Result<Option<Candles>, ClientError> {
         let url = "https://charting.vwdservices.com/hchart/v1/deGiro/data.js";
 
-        let mut body = self
-            .request_json(
-                HttpRequest::get(url)
-                    .require_restricted() // Quotes only need login
-                    .query("requestid", "1")
-                    .query("format", "json")
-                    .query("resolution", interval.to_string())
-                    .query("period", period.to_string())
-                    .query("series", format!("ohlc:issueid:{vwd_id}"))
-                    .query("userToken", self.client_id().to_string()),
+        let request = HttpRequest::get(url)
+            .require_restricted() // Quotes only need login
+            .query("requestid", "1")
+            .query("format", "json")
+            .query("resolution", interval.to_string())
+            .query("period", period.to_string())
+            .query(
+                "series",
+                format!("ohlc:{}:{}", series.kind().as_str(), series.value()),
             )
-            .await?;
+            .query("userToken", self.client_id().to_string());
+
+        let raw = self.request_text(request).await?;
+        let mut body = parse_chart_response(&raw)?;
 
         let error = body
             .get("series")
@@ -238,15 +383,15 @@ impl Degiro {
             return Err(ResponseError::invalid(error.to_string()).into());
         }
 
-        let start = body
-            .get("start")
-            .ok_or_else(|| DataError::missing_field("start"))?;
-        let start = serde_json::from_value::<NaiveDateTime>(start.clone())?;
+        let Some(start_value) = body.get("start") else {
+            return Ok(None);
+        };
+        let start = parse_chart_datetime(start_value)?;
 
-        let end = body
+        let end_value = body
             .get("end")
             .ok_or_else(|| DataError::missing_field("end"))?;
-        let end = serde_json::from_value::<NaiveDateTime>(end.clone())?;
+        let end = parse_chart_datetime(end_value)?;
 
         let data = body
             .get_mut("series")
@@ -297,7 +442,7 @@ mod test {
             .await
             .expect("Failed to get account configuration");
         let quotes = client
-            .quotes_by_id("332111", Period::P1Y, Period::P1M)
+            .quotes_by_product_id("332111", Period::P1Y, Period::P1M)
             .await
             .ok()
             .flatten()

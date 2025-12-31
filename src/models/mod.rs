@@ -13,11 +13,12 @@ mod product;
 mod product_types;
 mod quotes;
 pub mod risk;
+mod series;
 mod transaction;
 
 pub use account::{
-    AccountConfig, AccountData, AccountInfo, AccountState, CashMovement, CashMovementType,
-    CurrencyPair,
+    AccountConfig, AccountData, AccountInfo, AccountState, AccountTransactionType, Balance,
+    CashFund, CashMovement, CashMovementType, CurrencyPair,
 };
 pub use money::{Currency, Money};
 
@@ -35,6 +36,7 @@ pub use period::Period;
 pub use portfolio::{Portfolio, PortfolioObject, Position, PositionType};
 pub use product::{Product, Products};
 pub use product_types::{ProductCategory, ProductType};
+pub use series::{SeriesIdentifier, SeriesIdentifierKind};
 pub use transaction::TransactionType;
 // pub use quotes::Quotes;
 // pub use transaction::{Transaction, Transactions, TransactionDetails};

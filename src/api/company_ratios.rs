@@ -1,10 +1,11 @@
 use crate::{
     client::Degiro,
-    error::{ClientError, DataError},
+    error::{ClientError, DataError, ResponseError},
     http::{HttpClient, HttpRequest},
     models::{CompanyRatios, CurrentRatios},
     paths::{BASE_API_URL, COMPANY_RATIOS_PATH},
 };
+use reqwest::StatusCode;
 
 impl Degiro {
     pub async fn company_ratios_by_id(
@@ -24,14 +25,23 @@ impl Degiro {
     ) -> Result<Option<CompanyRatios>, ClientError> {
         let url = format!("{}{}{}", BASE_API_URL, COMPANY_RATIOS_PATH, isin.as_ref());
 
-        let json = self
+        let json = match self
             .request_json(
                 HttpRequest::get(url)
                     .query("intAccount", self.int_account().to_string())
                     .query("sessionId", self.session_id())
                     .header("Content-Type", "application/json"),
             )
-            .await?;
+            .await
+        {
+            Ok(json) => json,
+            Err(ClientError::ResponseError(ResponseError::HttpStatus { status, .. }))
+                if status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND =>
+            {
+                return Ok(None);
+            }
+            Err(err) => return Err(err),
+        };
         let data = json
             .get("data")
             .ok_or_else(|| DataError::missing_field("data"))?;

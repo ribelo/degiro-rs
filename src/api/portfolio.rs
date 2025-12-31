@@ -6,9 +6,52 @@ use crate::{
     client::Degiro,
     error::{ClientError, DataError, ResponseError},
     http::{HttpClient, HttpRequest},
-    models::{Portfolio, PortfolioObject, Position, PositionType},
+    models::{Currency, Portfolio, PortfolioObject, Position, PositionType, Product},
     paths::UPDATE_DATA_PATH,
 };
+
+fn parse_currency_code(raw: &str) -> Option<Currency> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    trimmed
+        .parse()
+        .ok()
+        .or_else(|| trimmed.to_ascii_uppercase().parse().ok())
+}
+
+fn profile_instrument_currency(product: &Product) -> Option<Currency> {
+    product
+        .company_profile
+        .as_ref()
+        .and_then(|profile| parse_currency_code(&profile.currency))
+}
+
+fn inferred_instrument_currency(product: &Product) -> Currency {
+    profile_instrument_currency(product).unwrap_or_else(|| Currency::from(product.exchange))
+}
+
+fn should_refine_instrument_currency(position: &Position) -> bool {
+    position.position_type == PositionType::Product
+        && position.instrument_currency == position.base_currency
+        && position.value.currency() == position.base_currency
+}
+
+fn refine_instrument_currency_from_product(position: &mut Position, product: &Product) {
+    debug_assert!(
+        position.position_type != PositionType::Cash,
+        "Currency refinement should not target cash positions"
+    );
+    debug_assert!(
+        position.value.currency() == position.base_currency
+            || position.instrument_currency != position.base_currency,
+        "Positions with explicit value currency should already have instrument currency set"
+    );
+    if should_refine_instrument_currency(position) {
+        position.instrument_currency = inferred_instrument_currency(product);
+    }
+}
 
 impl Degiro {
     pub async fn portfolio(&self, fetch_products: bool) -> Result<Portfolio, ClientError> {
@@ -59,6 +102,9 @@ impl Degiro {
         if !position_futures.is_empty() {
             let results = position_futures.try_join().await?;
             for (mut position, product) in results {
+                if let Some(ref prod) = product {
+                    refine_instrument_currency_from_product(&mut position, prod);
+                }
                 position.product = product;
                 positions.push(position);
             }
@@ -81,8 +127,17 @@ impl Degiro {
 
 #[cfg(test)]
 mod test {
+    use super::{refine_instrument_currency_from_product, should_refine_instrument_currency};
 
-    use crate::client::Degiro;
+    use crate::{
+        client::Degiro,
+        http::{HttpClient, HttpRequest},
+        models::{
+            risk::RiskCategory, CompanyProfile, Currency, Exchange, Money, Position, PositionType,
+            Product,
+        },
+        paths::UPDATE_DATA_PATH,
+    };
     use rust_decimal::Decimal;
 
     #[tokio::test]
@@ -94,6 +149,18 @@ mod test {
             .account_config()
             .await
             .expect("Failed to get account config");
+        let url = client
+            .build_trading_url(UPDATE_DATA_PATH)
+            .expect("build trading url");
+        let raw = client
+            .request_json(HttpRequest::get(url).query("portfolio", "0"))
+            .await
+            .expect("fetch raw portfolio");
+        std::fs::write(
+            "portfolio_raw_tmp.json",
+            serde_json::to_string_pretty(&raw).expect("serialize raw portfolio"),
+        )
+        .expect("write raw portfolio");
         let xs = client
             .portfolio(false)
             .await
@@ -127,5 +194,94 @@ mod test {
             total >= Decimal::ZERO,
             "Total portfolio value should not be negative"
         );
+    }
+
+    fn make_product(exchange: Exchange, profile_currency: Option<&str>) -> Product {
+        let profile = profile_currency.map(|ccy| {
+            let mut profile = CompanyProfile::default();
+            profile.currency = ccy.to_string();
+            profile
+        });
+        Product {
+            active: true,
+            buy_order_types: None,
+            category: RiskCategory::A,
+            close_price: 0.0,
+            close_price_date: chrono::NaiveDate::from_ymd_opt(2024, 1, 1)
+                .expect("valid close price date"),
+            contract_size: 1.0,
+            exchange,
+            feed_quality: None,
+            feed_quality_secondary: None,
+            id: "TEST".to_string(),
+            isin: String::new(),
+            name: "Test Instrument".to_string(),
+            only_eod_prices: false,
+            order_book_depth: None,
+            order_book_depth_secondary: None,
+            order_time_types: None,
+            product_bit_types: None,
+            product_type: "STOCK".to_string(),
+            product_type_id: 0,
+            quality_switch_free: false,
+            quality_switch_free_secondary: false,
+            quality_switchable: false,
+            quality_switchable_secondary: false,
+            sell_order_types: None,
+            symbol: "TST".to_string(),
+            tradable: true,
+            vwd_id: None,
+            vwd_id_secondary: None,
+            vwd_identifier_type: None,
+            vwd_identifier_type_secondary: None,
+            vwd_module_id: None,
+            vwd_module_id_secondary: None,
+            company_profile: profile,
+        }
+    }
+
+    #[test]
+    fn refine_instrument_currency_prefers_profile_currency() {
+        let mut position = Position::default();
+        position.position_type = PositionType::Product;
+        position.base_currency = Currency::EUR;
+        position.instrument_currency = Currency::EUR;
+        position.value = Money::new(Currency::EUR, Decimal::ZERO);
+        let product = make_product(Exchange::NSDQ, Some("usd"));
+
+        refine_instrument_currency_from_product(&mut position, &product);
+
+        assert_eq!(position.instrument_currency, Currency::USD);
+        assert!(!should_refine_instrument_currency(&position));
+    }
+
+    #[test]
+    fn refine_instrument_currency_falls_back_to_exchange_mapping() {
+        let mut position = Position::default();
+        position.position_type = PositionType::Product;
+        position.base_currency = Currency::EUR;
+        position.instrument_currency = Currency::EUR;
+        position.value = Money::new(Currency::EUR, Decimal::ZERO);
+        let product = make_product(Exchange::SWX, None);
+
+        refine_instrument_currency_from_product(&mut position, &product);
+
+        assert_eq!(position.instrument_currency, Currency::CHF);
+        assert_eq!(position.value.currency(), Currency::EUR);
+    }
+
+    #[test]
+    fn refine_instrument_currency_respects_explicit_value_currency() {
+        let mut position = Position::default();
+        position.position_type = PositionType::Product;
+        position.base_currency = Currency::EUR;
+        position.instrument_currency = Currency::USD;
+        position.value = Money::new(Currency::USD, Decimal::ZERO);
+        let product = make_product(Exchange::LSE, Some("GBP"));
+
+        refine_instrument_currency_from_product(&mut position, &product);
+
+        assert_eq!(position.instrument_currency, Currency::USD);
+        assert_eq!(position.value.currency(), Currency::USD);
     }
 }

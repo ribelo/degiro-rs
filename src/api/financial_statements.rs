@@ -8,6 +8,7 @@ use crate::{
     models::{BalanceSheetReport, CashFlowReport, FinancialReports, IncomeStatementReport, Report},
     paths::{BASE_API_URL, FINANCIAL_STATEMENTS_PATH},
 };
+use reqwest::StatusCode;
 
 fn process_reports(data: &serde_json::Value) -> Result<Vec<Report>, ClientError> {
     let reports = data
@@ -131,14 +132,23 @@ impl Degiro {
             isin.as_ref()
         );
 
-        let json = self
+        let json = match self
             .request_json(
                 HttpRequest::get(url)
                     .query("intAccount", self.int_account().to_string())
                     .query("sessionId", self.session_id())
                     .header("Content-Type", "application/json"),
             )
-            .await?;
+            .await
+        {
+            Ok(json) => json,
+            Err(ClientError::ResponseError(ResponseError::HttpStatus { status, .. }))
+                if status == StatusCode::FORBIDDEN || status == StatusCode::NOT_FOUND =>
+            {
+                return Ok(None);
+            }
+            Err(err) => return Err(err),
+        };
         let data = match json.get("data") {
             Some(data) => data,
             None => return Ok(None),

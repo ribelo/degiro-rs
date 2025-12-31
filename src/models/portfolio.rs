@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use itertools::Itertools;
 
-use std::{collections::HashMap, convert::TryInto};
+use std::{collections::HashMap, convert::TryInto, str::FromStr};
 use strum::EnumString;
 use thiserror::Error;
 
@@ -59,19 +59,28 @@ pub enum ElemType {
 ///
 /// This includes financial metrics like price, size, value, and various profit calculations
 /// for both product and FX movements.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Position {
     pub id: String,
     pub position_type: PositionType,
+    #[serde(with = "rust_decimal::serde::str")]
     pub size: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
     pub price: Decimal,
-    pub currency: Currency,
+    /// Base currency from the account (PlBase element)
+    pub base_currency: Currency,
+    /// Instrument's trading currency (from Value element)
+    pub instrument_currency: Currency,
     pub value: Money,
+    #[serde(with = "rust_decimal::serde::str_option")]
     pub accrued_interest: Option<Decimal>,
     pub base_value: Money,
     pub today_value: Money,
+    #[serde(with = "rust_decimal::serde::str")]
     pub portfolio_value_correction: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
     pub break_even_price: Decimal,
+    #[serde(with = "rust_decimal::serde::str")]
     pub average_fx_rate: Decimal,
     pub realized_product_profit: Money,
     pub realized_fx_profit: Money,
@@ -83,7 +92,7 @@ pub struct Position {
     pub product: Option<Product>,
 }
 
-#[derive(Clone, Debug, Default, From, Deref, DerefMut, Into, Serialize)]
+#[derive(Clone, Debug, Default, From, Deref, DerefMut, Into, Serialize, Deserialize)]
 pub struct Portfolio(pub Vec<Position>);
 
 // impl FromIterator<Position> for Portfolio {
@@ -211,8 +220,8 @@ impl Portfolio {
     pub fn value_at_risk(&self, confidence_level: f64) -> HashMap<Currency, Decimal> {
         let mut var_by_currency = HashMap::new();
 
-        // Group positions by currency
-        let positions_by_currency = self.0.iter().group_by(|p| p.currency);
+        // Group positions by base currency
+        let positions_by_currency = self.0.iter().group_by(|p| p.base_currency);
 
         for (currency, positions) in &positions_by_currency {
             let total_value: Decimal = positions.map(|p| p.value.amount().abs()).sum();
@@ -238,7 +247,7 @@ impl Portfolio {
 
         self.0
             .iter()
-            .group_by(|p| p.currency)
+            .group_by(|p| p.base_currency)
             .into_iter()
             .map(|(currency, positions)| {
                 let currency_value: Decimal = positions.map(|p| p.value.amount().abs()).sum();
@@ -258,7 +267,9 @@ impl Portfolio {
                 Decimal::ZERO
             };
 
-            let entry = drawdowns.entry(position.currency).or_insert(Decimal::ZERO);
+            let entry = drawdowns
+                .entry(position.base_currency)
+                .or_insert(Decimal::ZERO);
             *entry = (*entry).max(drawdown);
         }
 
@@ -266,7 +277,7 @@ impl Portfolio {
     }
 }
 
-#[derive(Clone, Debug, Default, EnumString, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Debug, Default, EnumString, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[strum(ascii_case_insensitive)]
 pub enum PositionType {
     Cash,
@@ -297,7 +308,9 @@ impl TryFrom<PortfolioObject> for Position {
 
     fn try_from(obj: PortfolioObject) -> Result<Self, Self::Error> {
         let mut position = Position::default();
-        let mut value = Decimal::ZERO;
+        let mut value_amount = Decimal::ZERO;
+        let mut value_currency: Option<Currency> = None;
+
         for row in &obj.value {
             match row.elem_type {
                 ElemType::Id => {
@@ -334,12 +347,35 @@ impl TryFrom<PortfolioObject> for Position {
                         .ok_or(ParsePositionError::InvalidValue("price"))?;
                 }
                 ElemType::Value => {
-                    value = row
+                    // The Value element can be either a simple number or an object with currency
+                    let val = row
                         .value
                         .as_ref()
-                        .and_then(|v| v.as_f64())
-                        .and_then(Decimal::from_f64)
                         .ok_or(ParsePositionError::MissingField("value"))?;
+
+                    if let Some(obj) = val.as_object() {
+                        // Extract currency from the object
+                        if let Some(currency_str) = obj.get("currency").and_then(|v| v.as_str()) {
+                            value_currency = Some(
+                                currency_str
+                                    .parse()
+                                    .map_err(|_| ParsePositionError::InvalidCurrency)?,
+                            );
+                        }
+                        // Extract amount from the object
+                        if let Some(amount) = obj
+                            .get("amount")
+                            .and_then(|v| v.as_str())
+                            .and_then(|s| s.parse::<Decimal>().ok())
+                        {
+                            value_amount = amount;
+                        }
+                    } else if let Some(num) = val.as_f64().and_then(Decimal::from_f64) {
+                        // Fallback for simple numeric value
+                        value_amount = num;
+                    } else {
+                        return Err(ParsePositionError::MissingField("value"));
+                    }
                 }
                 ElemType::AccruedInterest => {
                     if let Some(s) = &row.value {
@@ -355,16 +391,12 @@ impl TryFrom<PortfolioObject> for Position {
                         .value
                         .as_ref()
                         .ok_or(ParsePositionError::MissingField("pl_base"))?;
-                    let money_map = serde_json::from_value::<HashMap<String, Decimal>>(map.clone())
-                        .map_err(|_| {
-                            ParsePositionError::InvalidData(
-                                "Failed to parse PlBase value".to_string(),
-                            )
-                        })?;
+                    let money_map = parse_money_map(map, "PlBase value")?;
                     let money = TryInto::<Money>::try_into(money_map).map_err(|_| {
                         ParsePositionError::InvalidData("Invalid PlBase value".to_string())
                     })?;
-                    position.currency = money.currency();
+                    // Store the base currency from PlBase
+                    position.base_currency = money.currency();
                     position.base_value = -money;
                 }
                 ElemType::TodayPlBase => {
@@ -372,12 +404,7 @@ impl TryFrom<PortfolioObject> for Position {
                         .value
                         .as_ref()
                         .ok_or(ParsePositionError::MissingField("today_pl_base"))?;
-                    let money_map = serde_json::from_value::<HashMap<String, Decimal>>(map.clone())
-                        .map_err(|_| {
-                            ParsePositionError::InvalidData(
-                                "Failed to parse TodayPlBase value".to_string(),
-                            )
-                        })?;
+                    let money_map = parse_money_map(map, "TodayPlBase value")?;
                     position.today_value = TryInto::<Money>::try_into(money_map).map_err(|_| {
                         ParsePositionError::InvalidData("Invalid TodayPlBase value".to_string())
                     })?;
@@ -415,7 +442,7 @@ impl TryFrom<PortfolioObject> for Position {
                         .and_then(|v| v.as_f64())
                         .and_then(Decimal::from_f64)
                         .ok_or(ParsePositionError::InvalidValue("realized_product_pl"))?;
-                    position.realized_product_profit = Money::new(position.currency, val);
+                    position.realized_product_profit = Money::new(position.base_currency, val);
                 }
                 ElemType::RealizedFxPl => {
                     let val = row
@@ -424,7 +451,7 @@ impl TryFrom<PortfolioObject> for Position {
                         .and_then(|v| v.as_f64())
                         .and_then(Decimal::from_f64)
                         .ok_or(ParsePositionError::InvalidValue("realized_fx_pl"))?;
-                    position.realized_fx_profit = Money::new(position.currency, val);
+                    position.realized_fx_profit = Money::new(position.base_currency, val);
                 }
                 ElemType::TodayRealizedProductPl => {
                     let val = row
@@ -435,7 +462,7 @@ impl TryFrom<PortfolioObject> for Position {
                         .ok_or(ParsePositionError::InvalidValue(
                             "today_realized_product_pl",
                         ))?;
-                    position.today_realized_product_pl = Money::new(position.currency, val);
+                    position.today_realized_product_pl = Money::new(position.base_currency, val);
                 }
                 ElemType::TodayRealizedFxPl => {
                     let val = row
@@ -444,11 +471,16 @@ impl TryFrom<PortfolioObject> for Position {
                         .and_then(|v| v.as_f64())
                         .and_then(Decimal::from_f64)
                         .ok_or(ParsePositionError::InvalidValue("today_realized_fx_pl"))?;
-                    position.today_realized_fx_pl = Money::new(position.currency, val);
+                    position.today_realized_fx_pl = Money::new(position.base_currency, val);
                 }
             }
         }
-        let currency = position.total_profit.currency();
+
+        // If Value element specified a currency, treat that as instrument currency; otherwise default to base for now.
+        position.instrument_currency = value_currency.unwrap_or(position.base_currency);
+
+        // Use base_currency for all derived calculations (these are in account currency)
+        let currency = position.base_currency;
         position.total_profit = Money::new(
             currency,
             (position.price * position.size - position.break_even_price * position.size)
@@ -461,7 +493,11 @@ impl TryFrom<PortfolioObject> for Position {
                 - (position.break_even_price * position.size) / position.average_fx_rate
         };
         position.product_profit = Money::new(currency, profit);
-        position.value = Money::new(currency, value);
+
+        // If Value carries an explicit currency, treat it as instrument currency; otherwise it's base.
+        let value_ccy = value_currency.unwrap_or(position.base_currency);
+        position.value = Money::new(value_ccy, value_amount);
+
         position.fx_profit = match position.total_profit.sub(position.product_profit) {
             Ok(total_minus_product) => match total_minus_product.sub(position.realized_fx_profit) {
                 Ok(result) => result,
@@ -471,4 +507,36 @@ impl TryFrom<PortfolioObject> for Position {
         };
         Ok(position)
     }
+}
+fn parse_money_map(
+    map: &Value,
+    field: &'static str,
+) -> Result<HashMap<String, Decimal>, ParsePositionError> {
+    let obj = map
+        .as_object()
+        .ok_or(ParsePositionError::MissingField(field))?;
+
+    let mut result = HashMap::with_capacity(obj.len());
+    for (currency, raw_value) in obj {
+        let decimal = raw_value
+            .as_f64()
+            .and_then(Decimal::from_f64)
+            .or_else(|| {
+                raw_value
+                    .as_str()
+                    .and_then(|s| Decimal::from_str(s.trim()).ok())
+            })
+            .ok_or_else(|| {
+                ParsePositionError::InvalidData(format!(
+                    "Failed to parse {field} value for {currency}"
+                ))
+            })?;
+        result.insert(currency.clone(), decimal);
+    }
+
+    if result.is_empty() {
+        return Err(ParsePositionError::MissingField(field));
+    }
+
+    Ok(result)
 }

@@ -24,6 +24,18 @@ impl FinancialReports {
     }
 }
 
+impl Reports {
+    /// Returns the reports slice for external iteration.
+    pub fn as_slice(&self) -> &[Report] {
+        &self.0
+    }
+
+    /// Returns the latest report by fiscal year, if any.
+    pub fn latest(&self) -> Option<&Report> {
+        self.0.iter().max_by_key(|r| r.fiscal_year)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {

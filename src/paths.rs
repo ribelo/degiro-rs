@@ -21,6 +21,8 @@ pub static COMPANY_NEWS_PATH: &str = "dgtbxdsservice/newsfeed/v2/news-by-company
 pub static CURATED_LISTS_PATH: &str = "curated-lists/api/secure/v1/internal/";
 pub static CASH_ACCOUNT_REPORT_URL: &str =
     "https://trader.degiro.nl/portfolio-reports/secure/v3/cashAccountReport/";
+pub static TRANSACTION_REPORT_URL: &str =
+    "https://trader.degiro.nl/portfolio-reports/secure/v3/transactionReport/";
 pub static COMPANY_PROFILE_PATH: &str = "dgtbxdsservice/company-profile/v2/";
 pub static COMPANY_RATIOS_PATH: &str = "dgtbxdsservice/company-ratios/";
 pub static FINANCIAL_STATEMENTS_PATH: &str = "dgtbxdsservice/financial-statements/";
