@@ -15,37 +15,37 @@ use crate::{
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub auto_fx_fee_in_base_currency: Decimal,
     #[serde(rename = "buysell")]
     pub transaction_type: TransactionType,
     pub counter_party: Option<String>,
     pub date: DateTime<FixedOffset>,
-    #[serde(with = "rust_decimal::serde::float_option")]
+    #[serde(default, with = "rust_decimal::serde::float_option")]
     pub fee_in_base_currency: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub fx_rate: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub gross_fx_rate: Decimal,
     pub id: i32,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub nett_fx_rate: Decimal,
     pub order_type_id: Option<i8>,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub price: Decimal,
     pub product_id: i32,
     /// Quantity is always reported as a positive number by Degiro; consumers should apply the
     /// correct sign based on `transaction_type` (e.g., subtract on sells).
     pub quantity: i32,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub total: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub total_fees_in_base_currency: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub total_in_base_currency: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub total_plus_all_fees_in_base_currency: Decimal,
-    #[serde(with = "rust_decimal::serde::float")]
+    #[serde(default, with = "rust_decimal::serde::float")]
     pub total_plus_fee_in_base_currency: Decimal,
     pub trading_venue: Option<String>,
     pub transaction_type_id: i32,
